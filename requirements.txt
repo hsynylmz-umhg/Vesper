@@ -1,0 +1,7 @@
+PyAudioWPatch>=0.2.12.7
+numpy>=1.24
+scipy>=1.11
+webrtcvad>=2.0.10
+faster-whisper>=1.1.0
+requests>=2.31
+nicegui>=1.4.0

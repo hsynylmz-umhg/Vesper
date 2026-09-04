@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" width="1024" height="1024" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <style>
+      .frame { fill: #ffffff; }
+    </style>
+  </defs>
+  <rect class="frame" x="0" y="0" width="1024" height="1024"/>
+  <image
+    x="0" y="0" width="1024" height="1024"
+    preserveAspectRatio="xMidYMid meet"
+    xlink:href="https://dvxrhkgloakisnvqoxgl.supabase.co/storage/v1/object/sign/images/inputs/1788507406786_nfm55lfe3.jpg?token=eyJraWQiOiI0NWE1YWU1ZS0xNzg4LTRiMWYtYWM5OC1hMjgwNmQ2OTM4ZWMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpbWFnZXMvaW5wdXRzLzE3ODg1MDc0MDY3ODZfbmZtNTVsZmUzLmpwZyIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3ODg1MDc0MTUsImV4cCI6MTgyMDA0MzQxNX0.-5w37RZTKnEHQ3peJziCG6UgkCDMIZC322kgf5fH7fY"
+    href="https://dvxrhkgloakisnvqoxgl.supabase.co/storage/v1/object/sign/images/inputs/1788507406786_nfm55lfe3.jpg?token=eyJraWQiOiI0NWE1YWU1ZS0xNzg4LTRiMWYtYWM5OC1hMjgwNmQ2OTM4ZWMiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJpbWFnZXMvaW5wdXRzLzE3ODg1MDc0MDY3ODZfbmZtNTVsZmUzLmpwZyIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3ODg1MDc0MTUsImV4cCI6MTgyMDA0MzQxNX0.-5w37RZTKnEHQ3peJziCG6UgkCDMIZC322kgf5fH7fY"/>
+</svg>

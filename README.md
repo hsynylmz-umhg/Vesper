@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/Vesper.svg" width="260" alt="Vesper">
+  <img src="assets/Vesper.jpg" width="260" alt="Vesper">
 </p>
 
 <h1 align="center">Vesper</h1>

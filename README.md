@@ -27,11 +27,13 @@ Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı do�
 
 Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut AI servisine gönderilmez ve API anahtarı gerekmez. Modeller ilk kullanımda indirildikten sonra temel inference akışı yerel olarak çalışabilir.
 
-<!-- v2 arayüz yenilemesiyle eklenecek:
 <p align="center">
-  <img src="assets/demo.png" width="850" alt="Vesper arayüzü: canlı özet ve gerçek zamanlı transkript">
+  <img src="assets/demo.jpg" width="900" alt="Vesper live transcription and summary interface">
 </p>
--->
+
+<p align="center">
+  <sub>Live transcription and AI-generated summaries running locally on Windows.</sub>
+</p>
 
 ## Nasıl çalışır?
 

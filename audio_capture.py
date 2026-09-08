@@ -120,6 +120,12 @@ class AudioCapture:
                     silence_ms = 0
                     chunk_ms = 0
         finally:
+            # Durdurma anında sessizlik eşiğine ulaşmamış (henüz "flush"
+            # edilmemiş) bir konuşma parçası varsa, onu atmak yerine kuyruğa
+            # koy. Aksi halde kullanıcı tam cümlenin ortasında Durdur'a
+            # basarsa o son parça Whisper'a hiç ulaşmadan kaybolurdu.
+            if speech_buffer:
+                self.output_queue.put(np.concatenate(speech_buffer))
             stream.stop_stream()
             stream.close()
             p.terminate()

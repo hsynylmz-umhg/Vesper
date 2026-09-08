@@ -1,4 +1,5 @@
 __pycache__/
+*.py[cod]
 .venv/
 venv/
 env/
@@ -6,3 +7,6 @@ outputs/
 minutes/
 *.md
 !README.md
+data/
+*.db-wal
+*.db-shm

@@ -827,24 +827,23 @@ Vesper/
 ├── summarizer.py       # Ollama + Gemma
 ├── config.py           # Merkezi yapılandırma
 │
-├── session.py          # Oturum / Segment / Özet veri modelleri (v0.2.0)
-├── storage.py          # SQLite bağlantı yönetimi + şema (v0.2.0)
-├── repository.py       # Kalıcılık katmanı — tüm SQL burada (v0.2.0)
+├── session.py          # Oturum / Segment / Özet veri modelleri
+├── storage.py          # SQLite bağlantı yönetimi + şema
+├── repository.py       # Kalıcılık katmanı — tüm SQL burada
 │
 ├── gpu_check.py        # CUDA / CTranslate2 tanı aracı
 ├── test_audio.py       # WASAPI ses testi
 ├── requirements.txt
+├── README.md
 ├── LICENSE
 │
-├── tests/              # Kalıcılık katmanı testleri (v0.2.0)
+├── tests/
 │   ├── test_persistence.py
 │   └── test_lifecycle_integration.py
 │
-├── assets/
-│   └── Vesper.jpg
-│
-├── data/               # SQLite veritabanı (vesper.db); git'e dahil edilmez (v0.2.0)
-└── outputs/            # Üretilen Markdown dışa aktarımları; git'e dahil edilmez
+└── assets/
+   ├── Vesper.jpg
+   └── demo.png
 ```
 
 ---
@@ -873,21 +872,9 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-- [ ] Arayüz yenilemesi + ekran görüntüleri (v2)
-- [ ] Speaker diarization / konuşmacı ayrımı
-- [ ] Zaman damgalı transkript
-- [x] Oturum sırasında transkripti diske sürekli yazma (v0.2.0)
-- [x] Çökme sonrası oturum kurtarma (v0.2.0)
-- [x] Kalıcı oturum geçmişi — listeleme, yeniden adlandırma, silme (v0.2.0)
-- [ ] Daha iyi Türkçe / İngilizce dil geçişi
-- [ ] Uzun oturumlar için hiyerarşik özetleme
-- [ ] Aranabilir eski oturumlar
-- [ ] Markdown / JSON / SRT export
-- [ ] GPU / CPU telemetry paneli
-- [ ] Ollama model kontrolü ve yardımcı kurulum akışı
-- [ ] Windows portable / `.exe` build
-- [ ] Linux PulseAudio / PipeWire desteği
-- [ ] English README
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Şu anki aktif sürüm **v0.2.0 — "Vesper remembers"**.
+
+Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 
 ---
 

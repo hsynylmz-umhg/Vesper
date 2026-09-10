@@ -34,7 +34,7 @@ if not logging.getLogger().handlers:
 # Tüm uygulama tek bir veritabanı dosyasını paylaşır (her thread kendi
 # bağlantısını açar, bkz. storage.py). Testler kendi Database(geçici_yol)
 # örneğini kurup SessionRepository'yi WebinarAssistant'a enjekte eder.
-_default_database = Database(config.DB_PATH)
+_default_database = Database(getattr(config, "DB_PATH", "data/vesper.db"))
 
 
 class WebinarAssistant:

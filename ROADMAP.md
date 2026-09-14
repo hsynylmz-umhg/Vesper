@@ -24,10 +24,10 @@ Vesper, sürüm sürüm genişleyen, tamamen yerel bir "meeting intelligence" si
 - [x] Her transkript parçasının üretildiği anda diske yazılması (crash recovery)
 - [x] Geçmiş oturum listesi + görüntüleyici (özet + tam transkript)
 - [x] Oturum yeniden adlandırma / silme
+- [x] Güvenli kapanış: bekleyen ses kuyruğunun tamamen işlenmesini garanti etme
 - [ ] Motor/UI ayrımı (`vesper/` paket yapısına geçiş) — henüz tamamlanmadı
-- [ ] Güvenli kapanış: bekleyen ses kuyruğunun tamamen işlenmesini garanti etme
 
-v0.2.0, yukarıdaki iki madde netleşene kadar tamamlanmış sayılmaz.
+v0.2.0, yukarıdaki son madde (paket ayrımı) netleşene kadar tamamlanmış sayılmaz.
 
 ## v0.3.0 — Vesper listens
 

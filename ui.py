@@ -59,7 +59,11 @@ def _apply_status_visuals(status: str) -> None:
 # ---------------------------------------------------------------------------
 
 def on_start():
-    assistant.start()
+    try:
+        assistant.start()
+    except Exception as e:
+        ui.notify(str(e), type="negative")
+        return
     start_button.disable()
     stop_button.enable()
 
@@ -68,11 +72,15 @@ async def on_stop():
     stop_button.disable()
     ui.notify("Final özet hazırlanıyor, bu 1-2 dakika sürebilir...", type="info")
     final_summary = await run.io_bound(assistant.stop)
-    summary_area.set_content(final_summary)
+    if final_summary:
+        summary_area.set_content(final_summary)
     start_button.enable()
-    ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
-    # Az önce biten oturum Geçmiş'te hemen görünsün.
-    refresh_history_list()
+    if assistant.last_stop_drained and assistant.last_stop_finalized:
+        ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
+        # Az önce biten oturum Geçmiş'te hemen görünsün.
+        refresh_history_list()
+    else:
+        ui.notify(f"Oturum tamamlanamadı: {assistant.status}", type="negative")
 
 
 _last = {"transcript": None, "summary": None}

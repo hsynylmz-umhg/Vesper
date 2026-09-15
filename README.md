@@ -820,22 +820,25 @@ Uzun vadede hiyerarşik/chunked özetleme daha ölçeklenebilir bir çözümdür
 
 ```text
 Vesper/
+├── main.py             # İnce CLI giriş noktası (motoru vesper.engine'den başlatır)
 ├── ui.py               # NiceGUI web arayüzü (Oturum + Geçmiş sekmeleri)
-├── main.py             # Ana uygulama ve thread yönetimi
-├── audio_capture.py    # WASAPI loopback + WebRTC VAD
-├── transcriber.py      # faster-whisper / CUDA / fallback
-├── summarizer.py       # Ollama + Gemma
-├── config.py           # Merkezi yapılandırma
-│
-├── session.py          # Oturum / Segment / Özet veri modelleri
-├── storage.py          # SQLite bağlantı yönetimi + şema
-├── repository.py       # Kalıcılık katmanı — tüm SQL burada
-│
-├── gpu_check.py        # CUDA / CTranslate2 tanı aracı
-├── test_audio.py       # WASAPI ses testi
+├── gpu_check.py        # CUDA / CTranslate2 tanı aracı (bağımsız)
+├── test_audio.py       # WASAPI ses testi (bağımsız)
 ├── requirements.txt
 ├── README.md
+├── ROADMAP.md
 ├── LICENSE
+│
+├── vesper/                 # Uygulama motoru — UI'dan bağımsız çalışabilir paket
+│   ├── engine.py           # WebinarAssistant: capture→transcribe→summarize akışı,
+│   │                       # güvenli kapanış / queue-drain garantisi
+│   ├── config.py           # Merkezi yapılandırma
+│   ├── audio_capture.py    # WASAPI loopback + WebRTC VAD
+│   ├── transcriber.py      # faster-whisper / CUDA / fallback
+│   ├── summarizer.py       # Ollama + Gemma
+│   ├── session.py          # Oturum / Segment / Özet veri modelleri
+│   ├── storage.py          # SQLite bağlantı yönetimi + şema
+│   └── repository.py       # Kalıcılık katmanı — tüm SQL burada
 │
 ├── tests/
 │   ├── test_persistence.py

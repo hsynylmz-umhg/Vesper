@@ -8,7 +8,7 @@ Vesper, sürüm sürüm genişleyen, tamamen yerel bir "meeting intelligence" si
 |---|---|---|
 | v0.1.0 | Vesper enters the room | Yayında |
 | v0.1.1 | Interface refresh | Yayında |
-| v0.2.0 | Vesper remembers | Üzerinde çalışılıyor |
+| v0.2.0 | Vesper remembers | Yayında |
 | v0.3.0 | Vesper listens | Planlandı |
 | v0.4.0 | Vesper speaks | Planlandı |
 | v0.5.0 | Vesper understands | Planlandı |
@@ -18,16 +18,14 @@ Vesper, sürüm sürüm genişleyen, tamamen yerel bir "meeting intelligence" si
 | v0.9.0 | Vesper matures | Planlandı |
 | v1.0.0 | Vesper | Planlandı |
 
-## v0.2.0 — Vesper remembers *(aktif kapsam)*
+## v0.2.0 — Vesper remembers
 
 - [x] SQLite kalıcı depolama (`data/vesper.db`)
 - [x] Her transkript parçasının üretildiği anda diske yazılması (crash recovery)
 - [x] Geçmiş oturum listesi + görüntüleyici (özet + tam transkript)
 - [x] Oturum yeniden adlandırma / silme
 - [x] Güvenli kapanış: bekleyen ses kuyruğunun tamamen işlenmesini garanti etme
-- [ ] Motor/UI ayrımı (`vesper/` paket yapısına geçiş) — henüz tamamlanmadı
-
-v0.2.0, yukarıdaki son madde (paket ayrımı) netleşene kadar tamamlanmış sayılmaz.
+- [x] Motor/UI ayrımı (`vesper/` paket yapısına geçiş) — henüz tamamlanmadı
 
 ## v0.3.0 — Vesper listens
 

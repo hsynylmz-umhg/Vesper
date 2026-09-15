@@ -57,16 +57,19 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
 └──────────┬───────────┘
            │
            ▼
-       Transcript
-           │
-           ▼
+       Transcript ───────────► SQLite (data/vesper.db)
+           │                    her parça üretildiği anda
+           ▼                    kalıcı olarak yazılır
 ┌──────────────────────┐
 │    Ollama + Gemma    │
 │         CPU          │
 └──────────┬───────────┘
            │
            ▼
- Live Summary + Final Minutes
+ Live Summary + Final Minutes ─► SQLite (summaries)
+           │
+           ▼
+  outputs/*.md (dışa aktarım)  +  Geçmiş sekmesi (SQLite'tan okunur)
 ```
 
 - **Ses yakalama:** Windows'un WASAPI loopback özelliğini kullanır. Mikrofonu dinlemek yerine varsayılan çıkış cihazından oynatılan sesi yakalar.
@@ -74,7 +77,8 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
 - **ASR:** `faster-whisper` + CTranslate2 üzerinde Whisper large-v3-turbo, NVIDIA GPU ile çalışır.
 - **Özetleme:** Ollama üzerinden yerel Gemma modeli kullanılır. Varsayılan yapılandırmada Gemma CPU'da tutularak GPU belleği Whisper'a bırakılır.
 - **Canlı özet:** Belirlenen aralıklarla o ana kadarki transkript yeniden özetlenir.
-- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir.
+- **Kalıcılık (v0.2.0):** Her transkript parçası ve her özet, üretildiği anda `data/vesper.db` (SQLite) içine yazılır — Durdur'a basılmasını beklemez. Uygulama beklenmedik şekilde kapanırsa (çökme, güç kesintisi, `kill`), o ana kadar transkript edilmiş olan her şey diskte kalır ve bir sonraki açılışta Geçmiş'te "yarıda kesildi" olarak görünür. `outputs/*.md` dosyaları hâlâ üretilir ama artık bir dışa aktarımdır — kaynak veri SQLite'tadır.
+- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir. "Oturum" (canlı görünüm) ve "Geçmiş" (kayıtlı oturumlar) olmak üzere iki sekme vardır.
 
 ## Gereksinimler
 
@@ -397,20 +401,20 @@ http://192.168.1.23:8080
 
 ### Kullanım
 
-1. **Başlat** düğmesine bas.
+1. **Başlat** düğmesine bas. Yeni oturum otomatik olarak `Webinar — YYYY-MM-DD HH:MM` gibi bir başlıkla kaydedilmeye başlar (SQLite'a).
 2. Webinarı, canlı dersi veya toplantıyı oynat.
-3. Vesper konuşma parçalarını algılayıp Whisper'a gönderir.
+3. Vesper konuşma parçalarını algılayıp Whisper'a gönderir; her parça üretildiği anda kalıcı olarak yazılır.
 4. Transkript arayüzde görünür.
-5. Canlı özet belirlenen aralıklarla güncellenir.
-6. Oturum sonunda **Durdur ve Final Özet Çıkar** düğmesine bas.
+5. Canlı özet belirlenen aralıklarla güncellenir ve kaydedilir.
+6. Oturum sonunda **Durdur ve Final Özet Çıkar** düğmesine bas. Final özet kaydedilir, oturum "tamamlandı" olarak işaretlenir.
 
-Final çıktı:
+Final çıktı hem SQLite'a (`data/vesper.db`, kalıcı kaynak) hem de geriye dönük uyumluluk için:
 
 ```text
 outputs/webinar_YYYYMMDD_HHMMSS.md
 ```
 
-altına kaydedilir.
+altına Markdown olarak kaydedilir. Oturumu daha sonra **Geçmiş** sekmesinden yeniden adlandırabilir, açabilir veya silebilirsin.
 
 Arayüzsüz kullanım için:
 
@@ -418,12 +422,12 @@ Arayüzsüz kullanım için:
 python main.py
 ```
 
-Ctrl+C ile durdurulduğunda final özet oluşturulur.
+Ctrl+C ile durdurulduğunda final özet oluşturulur ve aynı şekilde kalıcı olarak kaydedilir.
 
 ### Örnek çıktı
 
 ```markdown
-# Webinar Özeti — 20260903_140512
+# Webinar — 2026-09-03 14:05
 
 ## Genel Özet
 
@@ -454,7 +458,7 @@ Vesper'ın çalışma ayarları `config.py` içerisindedir.
 | Ayar | Varsayılan | Açıklama |
 |---|---|---|
 | `WHISPER_LANGUAGE` | `"tr"` | Türkçe için dili sabitler. Karışık TR/EN içerikte `None` kullanılabilir |
-| `WHISPER_COMPUTE_TYPE` | `"int8_float16"` | GPU inference hassasiyeti / bellek dengesi |
+| `WHISPER_COMPUTE_TYPE` | `"float16"` | GPU inference hassasiyeti / bellek dengesi |
 | `WHISPER_ALLOW_CPU_FALLBACK` | `True` | GPU başlatılamazsa CPU'ya geçilmesine izin verir |
 | `WHISPER_GPU_INDEX` | `0` | Kullanılacak CUDA cihazı |
 | `WHISPER_MIN_CHUNK_SEC` | `0.3` | Çok kısa ses parçalarını filtreler |
@@ -486,18 +490,8 @@ WHISPER_LANGUAGE = None
 Varsayılan:
 
 ```python
-WHISPER_COMPUTE_TYPE = "int8_float16"
-```
-
-6 GB sınıfı GPU'lar için iyi bir başlangıç noktasıdır.
-
-GPU mimarisine ve VRAM'e bağlı olarak:
-
-```python
 WHISPER_COMPUTE_TYPE = "float16"
 ```
-
-da denenebilir.
 
 En iyi seçim GPU modeline göre benchmark edilmelidir.
 
@@ -520,6 +514,8 @@ Local Markdown Output
 ```
 
 Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthropic gibi harici bir AI API'sine göndermez.
+
+**Kalıcı depolama (v0.2.0):** Transkript parçaları ve özetler artık oturum sırasında `data/vesper.db` (yerel bir SQLite dosyası) içine yazılır; bu, `outputs/` altındaki Markdown dosyalarıyla aynı diskte, tamamen yerel bir depodur — hiçbir ağ isteği içermez. Geçmişi tamamen temizlemek istersen uygulama kapalıyken `data/vesper.db` dosyasını silmen yeterlidir; Vesper bir sonraki açılışta veritabanını sıfırdan oluşturur.
 
 İlk kurulum sırasında:
 
@@ -824,22 +820,33 @@ Uzun vadede hiyerarşik/chunked özetleme daha ölçeklenebilir bir çözümdür
 
 ```text
 Vesper/
-├── ui.py               # NiceGUI web arayüzü
-├── main.py             # Ana uygulama ve thread yönetimi
-├── audio_capture.py    # WASAPI loopback + WebRTC VAD
-├── transcriber.py      # faster-whisper / CUDA / fallback
-├── summarizer.py       # Ollama + Gemma
-├── config.py           # Merkezi yapılandırma
-│
-├── gpu_check.py        # CUDA / CTranslate2 tanı aracı
-├── test_audio.py       # WASAPI ses testi
+├── main.py             # İnce CLI giriş noktası (motoru vesper.engine'den başlatır)
+├── ui.py               # NiceGUI web arayüzü (Oturum + Geçmiş sekmeleri)
+├── gpu_check.py        # CUDA / CTranslate2 tanı aracı (bağımsız)
+├── test_audio.py       # WASAPI ses testi (bağımsız)
 ├── requirements.txt
+├── README.md
+├── ROADMAP.md
 ├── LICENSE
 │
-├── assets/
-│   └── Vesper.jpg
+├── vesper/                 # Uygulama motoru — UI'dan bağımsız çalışabilir paket
+│   ├── engine.py           # WebinarAssistant: capture→transcribe→summarize akışı,
+│   │                       # güvenli kapanış / queue-drain garantisi
+│   ├── config.py           # Merkezi yapılandırma
+│   ├── audio_capture.py    # WASAPI loopback + WebRTC VAD
+│   ├── transcriber.py      # faster-whisper / CUDA / fallback
+│   ├── summarizer.py       # Ollama + Gemma
+│   ├── session.py          # Oturum / Segment / Özet veri modelleri
+│   ├── storage.py          # SQLite bağlantı yönetimi + şema
+│   └── repository.py       # Kalıcılık katmanı — tüm SQL burada
 │
-└── outputs/            # Üretilen tutanaklar; git'e dahil edilmez
+├── tests/
+│   ├── test_persistence.py
+│   └── test_lifecycle_integration.py
+│
+└── assets/
+   ├── Vesper.jpg
+   └── demo.png
 ```
 
 ---
@@ -868,20 +875,9 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-- [ ] Arayüz yenilemesi + ekran görüntüleri (v2)
-- [ ] Speaker diarization / konuşmacı ayrımı
-- [ ] Zaman damgalı transkript
-- [ ] Oturum sırasında transkripti diske sürekli yazma
-- [ ] Çökme sonrası oturum kurtarma
-- [ ] Daha iyi Türkçe / İngilizce dil geçişi
-- [ ] Uzun oturumlar için hiyerarşik özetleme
-- [ ] Aranabilir eski oturumlar
-- [ ] Markdown / JSON / SRT export
-- [ ] GPU / CPU telemetry paneli
-- [ ] Ollama model kontrolü ve yardımcı kurulum akışı
-- [ ] Windows portable / `.exe` build
-- [ ] Linux PulseAudio / PipeWire desteği
-- [ ] English README
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Şu anki aktif sürüm **v0.2.0 — "Vesper remembers"**.
+
+Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 
 ---
 

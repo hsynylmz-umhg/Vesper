@@ -30,7 +30,6 @@ MAX_CHUNK_SECONDS = 25
 # bu yüzden CTranslate2'ye dönüştürülmüş HuggingFace deposunu doğrudan veriyoruz.
 WHISPER_MODEL = "deepdml/faster-whisper-large-v3-turbo-ct2"
 WHISPER_DEVICE = "cuda"                # Whisper'ı her zaman GPU'da tut (gerçek zamanlı olmalı)
-WHISPER_COMPUTE_TYPE = "int8_float16"  # 6GB VRAM'da ~2-3GB civarı yer kaplar
 WHISPER_LANGUAGE = "tr"                # Ağırlıklı Türkçe içerik: sabitlemek hız + doğruluk kazandırır
                                         # Webinar bazen İngilizce de içeriyorsa None yap (otomatik algılama, biraz daha yavaş)
 
@@ -75,6 +74,12 @@ LIVE_SUMMARY_INTERVAL_SEC = 240  # 4 dakika
 # ÇIKTI
 # ============================================================
 OUTPUT_DIR = "outputs"
+
+# ============================================================
+# KALICI OTURUM DEPOSU (SQLite) — v0.2.0
+# ============================================================
+# outputs/*.md dosyaları artık bir DIŞA AKTARIM; kaynak veri burada.
+DB_PATH = "data/vesper.db"
 
 WHISPER_GPU_INDEX = 0
 WHISPER_GPU_INIT_TIMEOUT_SEC = 180

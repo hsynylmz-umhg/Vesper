@@ -5,16 +5,17 @@ NiceGUI tabanlı, koyu temalı, canlı güncellenen web arayüzü.
 Tarayıcıda açılır, aynı ağdaki telefondan da erişilebilir
 (bilgisayarın IP'si + :8080).
 
-Bu dosya SADECE görsel katmanı yeniden tasarlar. WebinarAssistant,
-Transcriber, Summarizer vb. arka plan mantığına dokunulmamıştır;
-on_start / on_stop / refresh orijinal davranışıyla birebir aynı
-şekilde çalışır — tek ekleme, durum rozetinin yanına küçük bir
-görsel gösterge (nokta + eşitleyici ikonu) bağlamaktır.
+v0.2.0: "Oturum" (canlı görünüm, değişmedi) ve "Geçmiş" (kalıcı oturum
+listesi + detay) olmak üzere iki sekme var. Geçmiş sekmesi sadece
+assistant.repository üzerinden konuşur — burada hiç ham SQL yok.
 """
+
+from datetime import datetime
 
 from nicegui import ui, run
 
-from main import WebinarAssistant
+from vesper.engine import WebinarAssistant
+from vesper.session import STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
 
 assistant = WebinarAssistant()
 
@@ -58,7 +59,11 @@ def _apply_status_visuals(status: str) -> None:
 # ---------------------------------------------------------------------------
 
 def on_start():
-    assistant.start()
+    try:
+        assistant.start()
+    except Exception as e:
+        ui.notify(str(e), type="negative")
+        return
     start_button.disable()
     stop_button.enable()
 
@@ -67,9 +72,15 @@ async def on_stop():
     stop_button.disable()
     ui.notify("Final özet hazırlanıyor, bu 1-2 dakika sürebilir...", type="info")
     final_summary = await run.io_bound(assistant.stop)
-    summary_area.set_content(final_summary)
+    if final_summary:
+        summary_area.set_content(final_summary)
     start_button.enable()
-    ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
+    if assistant.last_stop_drained and assistant.last_stop_finalized:
+        ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
+        # Az önce biten oturum Geçmiş'te hemen görünsün.
+        refresh_history_list()
+    else:
+        ui.notify(f"Oturum tamamlanamadı: {assistant.status}", type="negative")
 
 
 _last = {"transcript": None, "summary": None}
@@ -86,6 +97,190 @@ def refresh():
     if assistant.live_summary and assistant.live_summary != _last["summary"]:
         summary_area.set_content(assistant.live_summary)
         _last["summary"] = assistant.live_summary
+
+
+# ---------------------------------------------------------------------------
+# Geçmiş (History) — sadece assistant.repository üzerinden konuşur
+# ---------------------------------------------------------------------------
+
+_history_state = {"selected_id": None}
+
+history_list_container = None
+history_detail_empty = None
+history_detail_content = None
+history_detail_title_label = None
+history_detail_summary_area = None
+history_detail_transcript_area = None
+
+
+def _format_local_datetime(iso_str: str) -> str:
+    try:
+        return datetime.fromisoformat(iso_str).astimezone().strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return iso_str or "—"
+
+
+def _format_duration(started_iso: str, ended_iso) -> str:
+    if not ended_iso:
+        return "—"
+    try:
+        start = datetime.fromisoformat(started_iso)
+        end = datetime.fromisoformat(ended_iso)
+    except (TypeError, ValueError):
+        return "—"
+    total_min = max(0, int((end - start).total_seconds() // 60))
+    hours, minutes = divmod(total_min, 60)
+    return f"{hours}sa {minutes}dk" if hours else f"{minutes}dk"
+
+
+def _status_label(status: str) -> str:
+    return {
+        "completed": "Tamamlandı",
+        "interrupted": "Yarıda kesildi",
+        "active": "Devam ediyor",
+    }.get(status, status)
+
+
+def _status_dot_class(status: str) -> str:
+    return {
+        "completed": "bg-slate-500",
+        "interrupted": "bg-amber-400",
+        "active": "bg-cyan-400",
+    }.get(status, "bg-slate-500")
+
+
+def open_session_detail(session_id: str):
+    session = assistant.repository.get_session(session_id)
+    if session is None:
+        return
+    _history_state["selected_id"] = session_id
+
+    transcript = assistant.repository.get_full_transcript_text(session_id)
+    final = assistant.repository.get_latest_summary(session_id, SUMMARY_FINAL)
+    live = assistant.repository.get_latest_summary(session_id, SUMMARY_LIVE)
+    summary = final or live
+    summary_text = summary.content if summary else "Bu oturum için özet bulunamadı."
+
+    history_detail_title_label.set_text(session.title)
+    history_detail_summary_area.set_content(summary_text)
+    history_detail_transcript_area.set_content(
+        transcript if transcript.strip() else "_Bu oturum için transkript yok._"
+    )
+    history_detail_empty.set_visibility(False)
+    history_detail_content.set_visibility(True)
+
+
+def clear_history_detail():
+    _history_state["selected_id"] = None
+    history_detail_content.set_visibility(False)
+    history_detail_empty.set_visibility(True)
+
+
+def open_rename_dialog(session_id: str, current_title: str):
+    with ui.dialog() as dialog, ui.card().classes("vesper-glass p-5 gap-3").style("min-width: 320px;"):
+        ui.label("Oturumu yeniden adlandır").classes("vesper-display text-base font-medium text-slate-100")
+        title_input = ui.input(value=current_title).classes("w-full").props("dark outlined dense")
+
+        def do_rename():
+            try:
+                assistant.repository.rename_session(session_id, title_input.value)
+            except ValueError as e:
+                ui.notify(str(e), type="negative")
+                return
+            dialog.close()
+            refresh_history_list()
+            if _history_state["selected_id"] == session_id:
+                history_detail_title_label.set_text(title_input.value.strip())
+
+        with ui.row().classes("justify-end gap-2 w-full mt-1"):
+            ui.button("İptal", on_click=dialog.close).props("flat").classes("text-slate-400")
+            ui.button("Kaydet", on_click=do_rename).classes("vesper-btn vesper-btn-primary")
+    dialog.open()
+
+
+def open_delete_dialog(session_id: str, title: str):
+    with ui.dialog() as dialog, ui.card().classes("vesper-glass p-5 gap-3").style("min-width: 320px;"):
+        ui.label(f'"{title}" silinsin mi?').classes("vesper-display text-base font-medium text-slate-100")
+        ui.label("Bu işlem geri alınamaz; transkript ve özetler kalıcı olarak silinir.").classes(
+            "text-xs text-slate-400"
+        )
+
+        def do_delete():
+            assistant.repository.delete_session(session_id)
+            dialog.close()
+            if _history_state["selected_id"] == session_id:
+                clear_history_detail()
+            refresh_history_list()
+            ui.notify("Oturum silindi.", type="warning")
+
+        with ui.row().classes("justify-end gap-2 w-full mt-1"):
+            ui.button("İptal", on_click=dialog.close).props("flat").classes("text-slate-400")
+            ui.button("Sil", on_click=do_delete).classes("vesper-btn vesper-btn-stop")
+    dialog.open()
+
+
+def _render_history_row(sess):
+    with ui.row().classes("vesper-glass items-center gap-3 px-4 py-3 w-full"):
+        with ui.column().classes("gap-1 flex-1 cursor-pointer").on(
+            "click", lambda: open_session_detail(sess.id)
+        ):
+            with ui.row().classes("items-center gap-2"):
+                ui.html(f'<span class="vesper-dot {_status_dot_class(sess.status)}"></span>').classes("flex-none")
+                ui.label(sess.title).classes("vesper-display text-sm font-medium text-slate-100")
+                if sess.status != STATUS_COMPLETED:
+                    ui.label(_status_label(sess.status)).classes(
+                        "vesper-mono text-xs uppercase text-amber-400"
+                    )
+            ui.label(
+                f"{_format_local_datetime(sess.started_at)}  ·  {_format_duration(sess.started_at, sess.ended_at)}"
+            ).classes("vesper-mono text-xs text-slate-500")
+
+        with ui.row().classes("gap-1 flex-none"):
+            ui.button(icon="edit", on_click=lambda: open_rename_dialog(sess.id, sess.title)).props(
+                "flat round dense"
+            ).classes("vesper-icon-btn")
+            ui.button(icon="delete", on_click=lambda: open_delete_dialog(sess.id, sess.title)).props(
+                "flat round dense"
+            ).classes("vesper-icon-btn vesper-icon-btn-danger")
+
+
+def refresh_history_list():
+    history_list_container.clear()
+    sessions = assistant.repository.list_sessions()
+
+    if not sessions:
+        with history_list_container:
+            ui.label("Henüz kaydedilmiş oturum yok.").classes(
+                "text-sm text-slate-500 text-center py-6"
+            )
+        return
+
+    with history_list_container:
+        for sess in sessions:
+            _render_history_row(sess)
+
+    if _history_state["selected_id"] and not any(s.id == _history_state["selected_id"] for s in sessions):
+        clear_history_detail()
+
+
+# ---------------------------------------------------------------------------
+# Sekme geçişi (Oturum / Geçmiş) — Quasar QTabs yerine, mevcut Vesper görsel
+# diline uyan basit, elle stillendirilmiş iki etiket.
+# ---------------------------------------------------------------------------
+
+session_view = None
+history_view = None
+tab_session_btn = None
+tab_history_btn = None
+
+
+def _switch_view(name: str):
+    session_view.set_visibility(name == "oturum")
+    history_view.set_visibility(name == "gecmis")
+    tab_session_btn.classes(replace="vesper-tab" + (" vesper-tab-active" if name == "oturum" else ""))
+    tab_history_btn.classes(replace="vesper-tab" + (" vesper-tab-active" if name == "gecmis" else ""))
+    if name == "gecmis":
+        refresh_history_list()
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +443,7 @@ ui.add_head_html("""
     opacity: 0.3 !important; cursor: not-allowed;
   }
 
-  /* ---------- Bölünmüş panel + sürüklenebilir ayırıcı ---------- */
+  /* ---------- Bölünmüş panel + sürüklenebilir ayırıcı (Oturum sekmesi) ---------- */
   .vesper-split { display: flex; flex-wrap: nowrap; align-items: stretch; }
   .vesper-resize-handle {
     flex: 0 0 18px;
@@ -276,6 +471,29 @@ ui.add_head_html("""
     .vesper-panel-left, .vesper-panel-right { flex-basis: auto !important; width: 100% !important; }
     .vesper-resize-handle { display: none; }
   }
+
+  /* ---------- Sekmeler (Oturum / Geçmiş) ---------- */
+  .vesper-tab {
+    padding: 0.45rem 1rem;
+    border-radius: 0.6rem;
+    font-size: 0.875rem;
+    color: var(--vesper-muted);
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+    user-select: none;
+  }
+  .vesper-tab:hover { color: #fff; }
+  .vesper-tab-active { color: #fff !important; background: rgba(255, 255, 255, 0.06); }
+
+  /* ---------- Geçmiş: statik (sürüklenemeyen) ikili panel ---------- */
+  .vesper-history-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 860px) {
+    .vesper-history-split { grid-template-columns: 1fr; }
+  }
+
+  .vesper-icon-btn { color: var(--vesper-muted) !important; }
+  .vesper-icon-btn:hover { color: #fff !important; }
+  .vesper-icon-btn-danger:hover { color: #fca5a5 !important; }
 </style>
 """)
 
@@ -321,43 +539,89 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
             status_dot = ui.html("<span></span>").classes("flex-none")
             status_badge = ui.label("Beklemede").classes("vesper-mono text-xs text-slate-300")
 
-    # ---- Kontrol satırı ----
-    with ui.row().classes("items-center gap-3"):
-        start_button = ui.button("Başlat", on_click=on_start)
-        start_button.props("unelevated no-caps")
-        start_button.classes("vesper-btn vesper-btn-primary")
+    # ---- Sekmeler ----
+    with ui.row().classes("gap-2"):
+        tab_session_btn = ui.label("Oturum").classes("vesper-tab vesper-tab-active")
+        tab_session_btn.on("click", lambda: _switch_view("oturum"))
+        tab_history_btn = ui.label("Geçmiş").classes("vesper-tab")
+        tab_history_btn.on("click", lambda: _switch_view("gecmis"))
 
-        stop_button = ui.button("Durdur ve Final Özet Çıkar", on_click=on_stop)
-        stop_button.props("unelevated no-caps")
-        stop_button.classes("vesper-btn vesper-btn-stop")
-        stop_button.disable()
+    # ======================================================================
+    # OTURUM sekmesi — canlı görünüm (mevcut tasarım/davranış AYNEN korunmuştur)
+    # ======================================================================
+    with ui.column().classes("w-full flex-1 gap-6") as session_view:
 
-    # ---- Bölünmüş panel: Canlı Özet | Canlı Transkript ----
-    with ui.row().classes("vesper-split w-full flex-1 gap-0"):
+        with ui.row().classes("items-center gap-3"):
+            start_button = ui.button("Başlat", on_click=on_start)
+            start_button.props("unelevated no-caps")
+            start_button.classes("vesper-btn vesper-btn-primary")
 
-        with ui.column().classes(
-            "vesper-glass vesper-panel-left flex-1 p-5 gap-3"
-        ).style("flex-basis: 50%;"):
+            stop_button = ui.button("Durdur ve Final Özet Çıkar", on_click=on_stop)
+            stop_button.props("unelevated no-caps")
+            stop_button.classes("vesper-btn vesper-btn-stop")
+            stop_button.disable()
+
+        with ui.row().classes("vesper-split w-full flex-1 gap-0"):
+
+            with ui.column().classes(
+                "vesper-glass vesper-panel-left flex-1 p-5 gap-3"
+            ).style("flex-basis: 50%;"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.html('<span class="vesper-panel-tag" style="background:#7c6cff"></span>').classes("flex-none")
+                    ui.label("Canlı Özet").classes("vesper-display text-base font-medium text-slate-100")
+                summary_area = ui.markdown("Henüz özet yok, başlat'a bas.").classes(
+                    "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-300 text-sm leading-relaxed"
+                ).style("max-height: 55vh;")
+
+            ui.html('<div class="vesper-resize-thumb"></div>').classes(
+                "vesper-resize-handle select-none"
+            )
+
+            with ui.column().classes(
+                "vesper-glass vesper-panel-right flex-1 p-5 gap-3"
+            ).style("flex-basis: 50%;"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.html('<span class="vesper-panel-tag" style="background:#22d3ee"></span>').classes("flex-none")
+                    ui.label("Canlı Transkript (son kısım)").classes("vesper-display text-base font-medium text-slate-100")
+                transcript_area = ui.markdown("_Transkript burada görünecek..._").classes(
+                    "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-400 text-sm leading-relaxed"
+                ).style("max-height: 55vh;")
+
+    # ======================================================================
+    # GEÇMİŞ sekmesi — kalıcı oturum listesi + detay (v0.2.0, yeni)
+    # ======================================================================
+    with ui.column().classes("w-full flex-1 gap-4") as history_view:
+        history_view.set_visibility(False)
+
+        history_list_container = ui.column().classes(
+            "vesper-scroll w-full gap-2 overflow-y-auto"
+        ).style("max-height: 32vh;")
+
+        with ui.column().classes("w-full flex-1 gap-3") as history_detail_empty:
+            ui.label("Bir oturum seçtiğinde özeti ve transkripti burada göreceksin.").classes(
+                "text-sm text-slate-500 text-center py-10"
+            )
+
+        with ui.column().classes("w-full flex-1 gap-3") as history_detail_content:
+            history_detail_content.set_visibility(False)
             with ui.row().classes("items-center gap-2"):
                 ui.html('<span class="vesper-panel-tag" style="background:#7c6cff"></span>').classes("flex-none")
-                ui.label("Canlı Özet").classes("vesper-display text-base font-medium text-slate-100")
-            summary_area = ui.markdown("Henüz özet yok, başlat'a bas.").classes(
-                "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-300 text-sm leading-relaxed"
-            ).style("max-height: 55vh;")
+                history_detail_title_label = ui.label("").classes(
+                    "vesper-display text-base font-medium text-slate-100"
+                )
 
-        ui.html('<div class="vesper-resize-thumb"></div>').classes(
-            "vesper-resize-handle select-none"
-        )
+            with ui.row().classes("vesper-history-split w-full flex-1"):
+                with ui.column().classes("vesper-glass flex-1 p-5 gap-3"):
+                    ui.label("Özet").classes("vesper-display text-sm font-medium text-slate-300")
+                    history_detail_summary_area = ui.markdown("").classes(
+                        "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-300 text-sm leading-relaxed"
+                    ).style("max-height: 45vh;")
 
-        with ui.column().classes(
-            "vesper-glass vesper-panel-right flex-1 p-5 gap-3"
-        ).style("flex-basis: 50%;"):
-            with ui.row().classes("items-center gap-2"):
-                ui.html('<span class="vesper-panel-tag" style="background:#22d3ee"></span>').classes("flex-none")
-                ui.label("Canlı Transkript (son kısım)").classes("vesper-display text-base font-medium text-slate-100")
-            transcript_area = ui.markdown("_Transkript burada görünecek..._").classes(
-                "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-400 text-sm leading-relaxed"
-            ).style("max-height: 55vh;")
+                with ui.column().classes("vesper-glass flex-1 p-5 gap-3"):
+                    ui.label("Transkript").classes("vesper-display text-sm font-medium text-slate-300")
+                    history_detail_transcript_area = ui.markdown("").classes(
+                        "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-400 text-sm leading-relaxed"
+                    ).style("max-height: 45vh;")
 
     # ---- Alt bilgi ----
     ui.label("Transkripsiyon ve özetleme yerel olarak çalışır — bulut AI API'si kullanılmaz.").classes(
@@ -370,6 +634,8 @@ _apply_status_visuals(assistant.status)
 
 # ---------------------------------------------------------------------------
 # Sürüklenebilir ayırıcı için vanilla JS (DOM hazır olduktan sonra çalışır)
+# Sadece Oturum sekmesindeki CANLI panel içindir — Geçmiş'teki statik ikili
+# panel kasıtlı olarak bunu kullanmaz (bkz. .vesper-history-split).
 # ---------------------------------------------------------------------------
 
 ui.add_body_html("""

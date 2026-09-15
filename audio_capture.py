@@ -44,10 +44,26 @@ class AudioCapture:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> bool:
+        """Var olan davranış AYNEN korunur (sinyal + 2 saniye join).
+        Dönüş değeri: True = yakalama thread'i KESİN olarak durdu; artık
+        output_queue'ya yeni bir şey yazamaz. False = 2 saniyede bitmedi,
+        thread hâlâ canlı olabilir — çağıran üreticinin öldüğünü VARSAYAMAZ
+        ve gerekiyorsa wait_until_stopped() ile beklemeye devam etmelidir."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
+            return not self._thread.is_alive()
+        return True
+
+    def wait_until_stopped(self, timeout: float) -> bool:
+        """stop() sonrası üreticinin kesin olarak öldüğünü doğrulamak için
+        ek süre bekler. Yeni bir durdurma yolu YOKTUR — aynı thread'e
+        tekrar join olur. True = artık kesinlikle canlı değil."""
+        if self._thread:
+            self._thread.join(timeout=timeout)
+            return not self._thread.is_alive()
+        return True
 
     def _find_loopback_device(self, p):
         wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
@@ -120,6 +136,12 @@ class AudioCapture:
                     silence_ms = 0
                     chunk_ms = 0
         finally:
+            # Durdurma anında sessizlik eşiğine ulaşmamış (henüz "flush"
+            # edilmemiş) bir konuşma parçası varsa, onu atmak yerine kuyruğa
+            # koy. Aksi halde kullanıcı tam cümlenin ortasında Durdur'a
+            # basarsa o son parça Whisper'a hiç ulaşmadan kaybolurdu.
+            if speech_buffer:
+                self.output_queue.put(np.concatenate(speech_buffer))
             stream.stop_stream()
             stream.close()
             p.terminate()

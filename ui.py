@@ -14,8 +14,8 @@ from datetime import datetime
 
 from nicegui import ui, run
 
-from main import WebinarAssistant
-from session import STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
+from vesper.engine import WebinarAssistant
+from vesper.session import STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
 
 assistant = WebinarAssistant()
 

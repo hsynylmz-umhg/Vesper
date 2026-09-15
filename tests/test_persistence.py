@@ -17,9 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from repository import SessionRepository
-from session import STATUS_ACTIVE, STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
-from storage import SCHEMA_VERSION, Database
+from vesper.repository import SessionRepository
+from vesper.session import STATUS_ACTIVE, STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
+from vesper.storage import SCHEMA_VERSION, Database
 
 
 class TempDbTestCase(unittest.TestCase):

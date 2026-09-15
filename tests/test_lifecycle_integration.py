@@ -43,10 +43,10 @@ if "faster_whisper" not in sys.modules:
     _fake_fw.download_model = lambda *a, **k: None
     sys.modules["faster_whisper"] = _fake_fw
 
-import config
-from repository import SessionRepository
-from session import STATUS_ACTIVE, STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL
-from storage import Database
+from vesper import config
+from vesper.repository import SessionRepository
+from vesper.session import STATUS_ACTIVE, STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL
+from vesper.storage import Database
 
 
 class FakeAudioCapture:
@@ -151,10 +151,10 @@ class TestLifecycleIntegration(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_stop_drains_backlogged_queue_without_losing_segments(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.start()
@@ -186,10 +186,10 @@ class TestLifecycleIntegration(unittest.TestCase):
             self.assertIn("FINAL", final_summary)
 
     def test_markdown_file_still_written_for_backward_compatibility(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.start()
@@ -204,10 +204,10 @@ class TestLifecycleIntegration(unittest.TestCase):
             self.assertIn("test cumlesi", content)
 
     def test_double_start_is_a_no_op(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.start()
@@ -224,10 +224,10 @@ class TestLifecycleIntegration(unittest.TestCase):
         """Asıl v0.2 güvencesi: stop() çağrıldığı anda bir chunk hâlâ
         transkripsiyon halindeyken (kuyruktan çıkmış ama bitmemiş), stop()
         o iş bitmeden ne oturumu TAMAMLANDI işaretleyebilir ne de dönebilir."""
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", ControllableFakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", ControllableFakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             release_event = threading.Event()
@@ -286,11 +286,11 @@ class TestLifecycleIntegration(unittest.TestCase):
                 self.assertIn(text, markdown)
 
     def test_stop_reports_incomplete_drain_on_timeout_without_leaking_worker(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", ControllableFakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer), \
-             patch("main.TRANSCRIBE_JOIN_TIMEOUT_SEC", 0.2):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", ControllableFakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer), \
+             patch("vesper.engine.TRANSCRIBE_JOIN_TIMEOUT_SEC", 0.2):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             release_event = threading.Event()
@@ -326,11 +326,11 @@ class TestLifecycleIntegration(unittest.TestCase):
         kanıtlayamazsa, sentinel HİÇ konulmamalı — aksi halde AudioCapture'ın
         finally bloğundaki son ses parçası sentinel'den sonra gelip hiç
         işlenmeyebilirdi."""
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer), \
-             patch("main.CAPTURE_EXTRA_WAIT_SEC", 0.1):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer), \
+             patch("vesper.engine.CAPTURE_EXTRA_WAIT_SEC", 0.1):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.capture.confirm_stopped = False  # stop() VE wait_until_stopped() False dönecek
@@ -363,10 +363,10 @@ class TestLifecycleIntegration(unittest.TestCase):
             self.assertFalse(assistant._transcribe_thread.is_alive())
 
     def test_stop_blocks_completion_on_persistence_gap(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.start()
@@ -396,10 +396,10 @@ class TestLifecycleIntegration(unittest.TestCase):
             self.assertEqual(final_summary, assistant.live_summary)
 
     def test_stop_blocks_completion_on_summarizer_failure(self):
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FailingFakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FailingFakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
             assistant.start()
@@ -418,10 +418,10 @@ class TestLifecycleIntegration(unittest.TestCase):
         start()), bellekten özet/Markdown üretimi (geriye dönük uyumluluk)
         ÇALIŞMAYA devam etmeli, ama last_stop_finalized asla True olmamalı —
         UI bunu 'kalıcı oturum tamamlandı' gibi göstermemeli."""
-        with patch("main.AudioCapture", FakeAudioCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
 
@@ -463,10 +463,10 @@ class TestLifecycleIntegration(unittest.TestCase):
                     raise OSError("simulated WASAPI device error")
                 super().start()
 
-        with patch("main.AudioCapture", FlakyStartCapture), \
-             patch("main.Transcriber", FakeTranscriber), \
-             patch("main.Summarizer", FakeSummarizer):
-            import main as main_module
+        with patch("vesper.engine.AudioCapture", FlakyStartCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
 
             assistant = main_module.WebinarAssistant(repository=self.repo)
 

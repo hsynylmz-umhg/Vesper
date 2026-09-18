@@ -14,13 +14,14 @@ import queue
 import threading
 import time
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from . import config
 from .audio_capture import AudioCapture
 from .transcriber import Transcriber
 from .summarizer import Summarizer
 from .repository import SessionRepository
-from .session import STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
+from .session import STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
 from .storage import Database
 
 log = logging.getLogger("main")
@@ -42,6 +43,10 @@ _default_database = Database(getattr(config, "DB_PATH", "data/vesper.db"))
 _TRANSCRIBE_SENTINEL = object()
 TRANSCRIBE_JOIN_TIMEOUT_SEC = 30
 CAPTURE_EXTRA_WAIT_SEC = 3
+# v0.3.0: _transcribe_loop() boş kuyrukta SONSUZA kadar bloke olmak yerine
+# bu süre aşıldığında uyanıp capture.get_error()'ı kontrol eder — böylece
+# yakalama işçisi çöktüğünde kullanıcı sonsuza kadar "Dinleniyor" görmez.
+CAPTURE_QUEUE_POLL_TIMEOUT_SEC = 1.0
 
 
 class WebinarAssistant:
@@ -69,6 +74,12 @@ class WebinarAssistant:
         self.last_stop_drained = None
         self.last_stop_finalized = None
         self._had_persistence_gap = False
+        # v0.3.0: yakalama işçisi çalışırken çöktüğünde bir kez True olur
+        # (bkz. _sync_capture_failure_state). Bu, EN İYİ ÇABA (best-effort)
+        # bir UI/durum bildirimi amaçlıdır; stop()'un kendisi finalizasyon
+        # kararı için HER ZAMAN capture.get_error()'ı TAZE olarak yeniden
+        # okur, bu bayrağa güvenmez (bkz. stop() içindeki yorum).
+        self.capture_failed = False
 
         self.capture = AudioCapture(self._audio_queue)
         self.transcriber = Transcriber()
@@ -83,6 +94,19 @@ class WebinarAssistant:
             self.repository.recover_interrupted_sessions()
         except Exception:
             log.exception("Başlangıç kurtarma taraması başarısız oldu (devam ediliyor)")
+
+    # ------------------------------------------------------------------ #
+    # v0.3.0 — ses kaynağı seçimi. UI (veya başka bir çağıran) SADECE bu
+    # ikisiyle konuşur; vesper.audio_capture'a doğrudan bağımlılık kurmaz.
+    # Düz Python verisi/parametreleri kullanır — NiceGUI'ye dair hiçbir şey
+    # bu sınıra geçmez (CLAUDE.md §5.7).
+    def list_audio_devices(self) -> List[Dict[str, Any]]:
+        return self.capture.list_available_devices()
+
+    def set_audio_device(self, device_index: Optional[int]) -> None:
+        if self._running:
+            raise RuntimeError("Oturum sürerken ses kaynağı değiştirilemez.")
+        self.capture.set_device(device_index)
 
     # ------------------------------------------------------------------ #
     def start(self):
@@ -105,20 +129,7 @@ class WebinarAssistant:
         self.last_stop_drained = None
         self.last_stop_finalized = None
         self._had_persistence_gap = False
-
-        default_title = f"Webinar — {datetime.now():%Y-%m-%d %H:%M}"
-        try:
-            self.session_id = self.repository.create_session(
-                title=default_title,
-                source_type="system_audio",
-                source_language=config.WHISPER_LANGUAGE,
-                summary_language="tr",
-            )
-        except Exception:
-            # SQLite'a yazılamasa bile oturum bellekte devam edebilmeli;
-            # ama bunu sessizce yutma, yüksek sesle logla.
-            self.session_id = None
-            log.exception("Yeni oturum SQLite'a kaydedilemedi — bu oturum kalıcı OLMAYACAK")
+        self.capture_failed = False
 
         try:
             self.capture.start()
@@ -129,6 +140,28 @@ class WebinarAssistant:
             log.exception("Ses yakalama başlatılamadı")
             self._running = False
             raise
+
+        # v0.3.0: create_session() artık capture.start()'TAN SONRA çağrılır,
+        # böylece source_name UI'nin verdiği bir string değil, ses katmanının
+        # GERÇEKTEN çözdüğü cihazın adı olur (bkz. AudioCapture.
+        # get_active_device_name). Yan etki: capture başlatma hatası artık
+        # kalıcı bir "active" oturum satırı YARATMIYOR (önceden yaratıyordu;
+        # bir sonraki açılışta recover_interrupted_sessions() tarafından zaten
+        # zararsız şekilde temizlenirdi).
+        default_title = f"Webinar — {datetime.now():%Y-%m-%d %H:%M}"
+        try:
+            self.session_id = self.repository.create_session(
+                title=default_title,
+                source_type="system_audio",
+                source_name=self.capture.get_active_device_name(),
+                source_language=config.WHISPER_LANGUAGE,
+                summary_language="tr",
+            )
+        except Exception:
+            # SQLite'a yazılamasa bile oturum bellekte devam edebilmeli;
+            # ama bunu sessizce yutma, yüksek sesle logla.
+            self.session_id = None
+            log.exception("Yeni oturum SQLite'a kaydedilemedi — bu oturum kalıcı OLMAYACAK")
 
         self._transcribe_thread = threading.Thread(target=self._transcribe_loop, daemon=True)
         self._summarize_thread = threading.Thread(target=self._summarize_loop, daemon=True)
@@ -142,7 +175,13 @@ class WebinarAssistant:
         kabul edilmiş ses kanıtlanmış şekilde işlendiyse özet üretir, ve
         yalnızca özet+dışa aktarım tamamen başarılı olursa oturumu TAMAMLANDI
         işaretler. Her başarısızlık noktasında oturum 'active' kalır ve bir
-        sonraki başlangıçta normal kurtarma akışıyla 'interrupted' olur."""
+        sonraki başlangıçta normal kurtarma akışıyla 'interrupted' olur.
+
+        v0.3.0: capture.get_error() doluysa (yakalama işçisi bir cihaz/host
+        hatasıyla çöktüyse), drain ve özet üretimi YİNE DE normal şekilde
+        çalışır — ama oturum STATUS_COMPLETED değil STATUS_INTERRUPTED
+        işaretlenir (last_stop_finalized=False). Yakalanan hiçbir veri
+        kaybolmaz; sadece oturumun TEMİZ tamamlandığı iddiası kaldırılır."""
         if not self._running:
             return self.live_summary
         self._running = False
@@ -151,6 +190,15 @@ class WebinarAssistant:
         # sentinel'i kuyruğa KOYMA — aksi halde AudioCapture'ın finally
         # bloğundaki son konuşma parçası sentinel'den SONRA kuyruğa girebilir
         # ve transkripsiyon işçisi onu hiç görmeden çıkabilir.
+        #
+        # v0.3.0 notu: capture.stop()'un "üretici öldü" kanıtı
+        # (not self._thread.is_alive()) bir ÇÖKME sonrası da GEÇERLİ kalır.
+        # Çöken bir _run() thread'i zaten sona ermiştir — is_alive() anında
+        # False döner, tam olarak temiz bir çıkışla AYNI garantiyi verir
+        # ("bu thread bir daha ASLA kuyruğa bir şey koymayacak"). Bu yüzden
+        # sentinel'i koymak çökme sonrasında da GÜVENLİDİR; invariant
+        # ATLANMAZ, sadece çökme de invariant'ın zaten kapsadığı bir
+        # "üretici kesinlikle öldü" durumudur.
         try:
             producer_dead = self.capture.stop()
         except Exception:
@@ -207,8 +255,15 @@ class WebinarAssistant:
         # 5) Final özet + kalıcı yazım + dışa aktarım — bu sırayla, ve
         # STATUS_COMPLETED en SONDA: dışa aktarım başarısız olursa oturum
         # zaten TAMAMLANDI işaretlenmiş olmamalı.
+        #
+        # v0.3.0: bu noktada capture.get_error()'ı BİR KEZ, TAZE olarak
+        # okuyoruz — self.capture_failed'e (best-effort UI bayrağına) DEĞİL.
+        # Çünkü kullanıcı Durdur'a, _sync_capture_failure_state()'in bir
+        # sonraki yoklama turuna ULAŞMADAN ÖNCE basmış olabilir; bu durumda
+        # capture_failed henüz False olabilir ama hata zaten oluşmuştur.
         self.status = "Final özet hazırlanıyor..."
         full_text = self.get_full_transcript()
+        capture_error = self.capture.get_error()
         try:
             final_summary = self.summarizer.summarize(full_text, is_final=True)
 
@@ -221,9 +276,25 @@ class WebinarAssistant:
             self._save_output(full_text, final_summary)
 
             if self.session_id:
-                self.repository.finish_session(self.session_id, status=STATUS_COMPLETED)
-                self.last_stop_finalized = True
-                self.status = "Durduruldu"
+                if capture_error is not None:
+                    # Ses kaynağı oturum SIRASINDA koptu (ör. Bluetooth cihaz
+                    # kapandı). Yakalanan her şey işlendi ve kalıcı kaydedildi,
+                    # final özet de üretildi — ama oturum TEMİZ bir Durdur ile
+                    # değil, kaynağın beklenmedik ölümüyle bitti. STATUS_
+                    # INTERRUPTED zaten "temiz kapanmadı" anlamına geliyor
+                    # (bkz. session.py) ve bu durumu da doğru şekilde
+                    # kapsıyor; yeni bir şema/durum değeri gerekmiyor.
+                    self.repository.finish_session(self.session_id, status=STATUS_INTERRUPTED)
+                    self.last_stop_finalized = False
+                    self.status = "Durduruldu (ses kaynağı koptu)"
+                    log.error(
+                        "Oturum ses kaynağı hatasıyla bitti; TAMAMLANDI değil, "
+                        "INTERRUPTED olarak işaretlendi: %s", capture_error,
+                    )
+                else:
+                    self.repository.finish_session(self.session_id, status=STATUS_COMPLETED)
+                    self.last_stop_finalized = True
+                    self.status = "Durduruldu"
             else:
                 # SQLite'a oturum hiç kaydedilememişti (start()'taki not).
                 # Bellekten Markdown dışa aktarımı yine de üretildi — ama bu
@@ -244,6 +315,20 @@ class WebinarAssistant:
         with self.transcript_lock:
             return " ".join(self.full_transcript)
 
+    def _sync_capture_failure_state(self) -> None:
+        """capture.get_error() içinde bir hata VARSA ve daha önce fark
+        edilmediyse, capture_failed/status'u BİR KEZ günceller ve loglar.
+        İdempotenttir — tekrar tekrar çağrılması güvenlidir, sadece İLK
+        geçişte bir şey yapar. _transcribe_loop içinde HEM kuyruk boşken
+        (queue.Empty) HEM DE bir yığın (backlog) işlenirken çağrılır, böylece
+        kuyruk boşalana kadar fark edilmesi GECİKMEZ. Bu sadece EN İYİ ÇABA
+        bir bildirimdir — stop() kendi kararı için capture.get_error()'ı
+        HER ZAMAN ayrıca ve TAZE olarak okur, bu fonksiyona/bayrağa güvenmez."""
+        if not self.capture_failed and self.capture.get_error() is not None:
+            self.capture_failed = True
+            self.status = "Ses kaynağı beklenmedik şekilde koptu"
+            log.error("Ses yakalama işçisi çalışırken çöktü: %s", self.capture.get_error())
+
     # ------------------------------------------------------------------ #
     def _transcribe_loop(self):
         try:
@@ -251,8 +336,22 @@ class WebinarAssistant:
             # öldüğünü kanıtladıktan SONRA kuyruğa _TRANSCRIBE_SENTINEL koyar.
             # FIFO sıra sayesinde sentinel'e ulaşmak, ondan önce kabul edilmiş
             # her şeyin işlendiğinin kanıtıdır.
+            #
+            # v0.3.0: .get() artık SONSUZA kadar bloke olmuyor — CAPTURE_
+            # QUEUE_POLL_TIMEOUT_SEC aşılırsa (kuyruk boş) uyanıp yakalama
+            # işçisinin çöküp çökmediğini kontrol eder. Bu kontrol AYRICA her
+            # gerçek öğe işlendikten sonra da yapılır — böylece çöküşün
+            # fark edilmesi, arkasında bir yığın (backlog) varsa kuyruk
+            # boşalana kadar gecikmez.
             while True:
-                item = self._audio_queue.get()
+                try:
+                    item = self._audio_queue.get(timeout=CAPTURE_QUEUE_POLL_TIMEOUT_SEC)
+                except queue.Empty:
+                    self._sync_capture_failure_state()
+                    continue
+
+                self._sync_capture_failure_state()
+
                 if item is _TRANSCRIBE_SENTINEL:
                     break
                 audio_chunk = item

@@ -27,6 +27,7 @@ status_dot = None
 waveform_icon = None
 start_button = None
 stop_button = None
+device_select = None
 
 # main.py'deki self.status metinlerinin TAM KARŞILIĞI (nokta rengi, canlı mı)
 STATUS_STYLES = {
@@ -35,6 +36,11 @@ STATUS_STYLES = {
     "Canlı özet güncelleniyor...": ("bg-amber-400", True),
     "Final özet hazırlanıyor...": ("bg-amber-400", True),
     "Durduruldu": ("bg-slate-500", False),
+    # v0.3.0 — mevcut renk paletinden (amber) yeniden kullanılıyor, yeni bir
+    # tasarım dili eklenmiyor. Aktif arıza pulse'lanır (kullanıcı henüz
+    # Durdur'a basmadı); durduruldu-sonrası durum pulse'lanmaz (final durum).
+    "Ses kaynağı beklenmedik şekilde koptu": ("bg-amber-400", True),
+    "Durduruldu (ses kaynağı koptu)": ("bg-amber-400", False),
 }
 
 
@@ -58,6 +64,23 @@ def _apply_status_visuals(status: str) -> None:
 # Arka plan mantığına bağlanan fonksiyonlar — ORİJİNAL DAVRANIŞ KORUNMUŞTUR
 # ---------------------------------------------------------------------------
 
+def _build_device_options() -> dict:
+    """v0.3.0: ses kaynağı seçimi. UI, vesper.audio_capture'a DOĞRUDAN bağımlı
+    DEĞİLDİR — sadece assistant.list_audio_devices() üzerinden konuşur
+    (motorun tek uygulama-yüzeyi, bkz. CLAUDE.md §5.7)."""
+    options = {None: "Sistem varsayılanı (otomatik)"}
+    for device in assistant.list_audio_devices():
+        options[device["index"]] = device["name"]
+    return options
+
+
+def on_device_change(e):
+    try:
+        assistant.set_audio_device(e.value)
+    except Exception as exc:
+        ui.notify(str(exc), type="negative")
+
+
 def on_start():
     try:
         assistant.start()
@@ -66,6 +89,24 @@ def on_start():
         return
     start_button.disable()
     stop_button.enable()
+    device_select.disable()
+
+    # v0.3.0: bir önceki oturumdan panelde kalan içeriği/durumu temizle.
+    # Bu SADECE start() başarılı olduktan SONRA yapılır — başarısız bir
+    # start() önceki oturumun hâlâ geçerli olan görünümünü SİLMEMELİDİR.
+    # (capture_failure_notified sıfırlaması da buraya taşındı — daha önce
+    # ayrı bir satırdaydı, iki kez sıfırlanmasın diye tek yerde toplandı.)
+    transcript_area.set_content("_Transkript burada görünecek..._")
+    summary_area.set_content("Henüz özet yok, başlat'a bas.")
+    _last["transcript"] = None
+    _last["summary"] = None
+    _last["capture_failure_notified"] = False
+
+    # Rozet/nokta, bir sonraki 5 saniyelik ui.timer turunu beklemeden hemen
+    # senkronize edilir — aksi halde kullanıcı kısaca bir önceki oturumun
+    # durumunu görebilir.
+    status_badge.set_text(assistant.status)
+    _apply_status_visuals(assistant.status)
 
 
 async def on_stop():
@@ -75,6 +116,7 @@ async def on_stop():
     if final_summary:
         summary_area.set_content(final_summary)
     start_button.enable()
+    device_select.enable()
     if assistant.last_stop_drained and assistant.last_stop_finalized:
         ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
         # Az önce biten oturum Geçmiş'te hemen görünsün.
@@ -83,11 +125,18 @@ async def on_stop():
         ui.notify(f"Oturum tamamlanamadı: {assistant.status}", type="negative")
 
 
-_last = {"transcript": None, "summary": None}
+_last = {"transcript": None, "summary": None, "capture_failure_notified": False}
 
 def refresh():
     status_badge.set_text(assistant.status)
     _apply_status_visuals(assistant.status)
+
+    # v0.3.0: yakalama işçisi çöktüğünde BİR KEZ negatif bildirim göster.
+    # _last["capture_failure_notified"] on_start()'ta sıfırlanır, böylece
+    # bir SONRAKI oturum da kaynağını kaybederse BAĞIMSIZ olarak bildirilir.
+    if assistant.capture_failed and not _last["capture_failure_notified"]:
+        _last["capture_failure_notified"] = True
+        ui.notify(assistant.status, type="negative")
 
     tail = assistant.get_full_transcript()[-4000:]
     if tail and tail != _last["transcript"]:
@@ -552,6 +601,10 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
     with ui.column().classes("w-full flex-1 gap-6") as session_view:
 
         with ui.row().classes("items-center gap-3"):
+            device_select = ui.select(
+                _build_device_options(), value=None, on_change=on_device_change
+            ).props("dark outlined dense").classes("min-w-[220px]")
+
             start_button = ui.button("Başlat", on_click=on_start)
             start_button.props("unelevated no-caps")
             start_button.classes("vesper-btn vesper-btn-primary")

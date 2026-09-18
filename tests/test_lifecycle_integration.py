@@ -56,13 +56,24 @@ class FakeAudioCapture:
     ne döndüreceğini kontrol eder. Testler bunu instance üzerinde
     (assistant.capture.confirm_stopped = False) değiştirerek 'üretici kesin
     olarak durduğunu kanıtlayamadı' senaryosunu deterministik şekilde
-    tetikleyebilir."""
+    tetikleyebilir.
+
+    v0.3.0: set_device()/get_active_device_name()/list_available_devices()
+    gerçek AudioCapture'ın cihaz seçimi yüzeyini taklit eder — WebinarAssistant
+    seviyesindeki testler set_audio_device()/list_audio_devices() akışını
+    bu sahte üzerinden doğrulayabilsin diye. Gerçek doğrulama/loopback
+    eşleştirme mantığı burada YOKTUR — o, tests/test_audio_capture_device_
+    selection.py'de gerçek AudioCapture'a karşı, mock'lanmış bir pyaudio
+    ile ayrıca test edilir."""
 
     def __init__(self, output_queue):
         self.output_queue = output_queue
         self.started = False
         self.stop_called = False
         self.confirm_stopped = True
+        self._device_index = None
+        self.active_device_name = "Sahte Cihaz (test)"
+        self._error = None
 
     def start(self):
         self.started = True
@@ -73,6 +84,19 @@ class FakeAudioCapture:
 
     def wait_until_stopped(self, timeout: float) -> bool:
         return self.confirm_stopped
+
+    def set_device(self, device_index):
+        self._device_index = device_index
+
+    def get_active_device_name(self):
+        return self.active_device_name
+
+    def get_error(self):
+        return self._error
+
+    @staticmethod
+    def list_available_devices():
+        return [{"index": 1, "name": "Sahte Loopback Cihazı"}]
 
 
 class FakeTranscriber:
@@ -479,6 +503,225 @@ class TestLifecycleIntegration(unittest.TestCase):
             self.assertTrue(assistant._running)
             self.assertTrue(assistant.capture.started)
             assistant.stop()
+
+    # ------------------------------------------------------------------ #
+    # v0.3.0 — ses kaynağı seçimi
+    # ------------------------------------------------------------------ #
+
+    def test_list_audio_devices_delegates_to_capture(self):
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            self.assertEqual(
+                assistant.list_audio_devices(),
+                [{"index": 1, "name": "Sahte Loopback Cihazı"}],
+            )
+
+    def test_set_audio_device_rejected_while_running(self):
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+            with self.assertRaises(RuntimeError):
+                assistant.set_audio_device(1)
+            assistant.stop()
+
+    def test_set_audio_device_flows_into_session_source_name(self):
+        """source_name UI'nin verdiği bir değer değil, ses katmanının
+        get_active_device_name()'inden gelmelidir (bkz. engine.py'daki
+        capture.start() -> create_session() sıralaması)."""
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.set_audio_device(1)
+            assistant.capture.active_device_name = "USB Kulaklık (Loopback)"
+
+            assistant.start()
+            session_id = assistant.session_id
+
+            session = self.repo.get_session(session_id)
+            self.assertEqual(session.source_name, "USB Kulaklık (Loopback)")
+            assistant.stop()
+
+    def test_capture_start_failure_leaves_no_orphan_session(self):
+        """v0.3.0: create_session() artık capture.start()'tan SONRA çağrılıyor,
+        bu yüzden capture.start() patladığında hiçbir oturum satırı yaratılmamalı
+        (önceden yaratılıyordu; sonraki açılışta zararsızca 'interrupted' olarak
+        kurtarılıyordu — bu test sıralamanın değiştiğini doğrudan kanıtlar)."""
+
+        class FlakyStartCapture(FakeAudioCapture):
+            def start(self):
+                raise OSError("simulated device error")
+
+        with patch("vesper.engine.AudioCapture", FlakyStartCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            with self.assertRaises(OSError):
+                assistant.start()
+            self.assertIsNone(assistant.session_id)
+            self.assertEqual(self.repo.list_sessions(), [])
+
+    # ------------------------------------------------------------------ #
+    # v0.3.0 — çalışma-zamanı (runtime) yakalama arızası yönetimi
+    # ------------------------------------------------------------------ #
+
+    def test_capture_failure_detected_while_backlog_still_processing(self):
+        """Fark edilme, kuyruk BOŞALANA KADAR gecikmemeli — bir yığın (backlog)
+        işlenirken bile hata zaten mevcutsa fark edilmelidir, sadece
+        queue.Empty anında değil."""
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer), \
+             patch("vesper.engine.CAPTURE_QUEUE_POLL_TIMEOUT_SEC", 0.05):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+
+            for i in range(5):
+                assistant._audio_queue.put(f"backlog-{i}")
+            assistant.capture._error = OSError("simulated device loss mid-backlog")
+
+            time.sleep(0.5)  # 5 parça (~0.1sn, FakeTranscriber başına 0.02sn) + en
+                             # az bir sağlık kontrolü turu için yeterli
+
+            self.assertEqual(
+                len(self.repo.get_segments(assistant.session_id)), 5,
+                "yığındaki tüm parçalar, arızaya rağmen işlenmiş olmalı",
+            )
+            self.assertTrue(assistant.capture_failed)
+            self.assertEqual(assistant.status, "Ses kaynağı beklenmedik şekilde koptu")
+
+            assistant.stop()
+
+    def test_repeated_health_checks_transition_only_once(self):
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer), \
+             patch("vesper.engine.CAPTURE_QUEUE_POLL_TIMEOUT_SEC", 0.02), \
+             patch("vesper.engine.log") as mock_log:
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+            assistant.capture._error = OSError("simulated device loss")
+
+            time.sleep(0.3)  # birden fazla sağlık kontrolü turu geçsin
+            status_after_multiple_polls = assistant.status
+            self.assertTrue(assistant.capture_failed)
+
+            time.sleep(0.2)  # daha da fazla tur
+            self.assertEqual(
+                assistant.status, status_after_multiple_polls,
+                "durum, ilk fark edilmeden sonra tekrar tekrar değişmemeli",
+            )
+
+            assistant.stop()
+
+        capture_failure_log_calls = [
+            c for c in mock_log.error.call_args_list
+            if c.args and "çöktü" in str(c.args[0])
+        ]
+        self.assertEqual(
+            len(capture_failure_log_calls), 1,
+            "arıza sadece BİR KEZ loglanmalı, tekrar tekrar değil",
+        )
+
+    def test_stop_checks_capture_error_directly_even_if_not_yet_flagged(self):
+        """stop() finalizasyon kararı için HER ZAMAN capture.get_error()'ı
+        taze olarak okumalı — sadece en-iyi-çaba capture_failed bayrağına
+        güvenmemeli. CAPTURE_QUEUE_POLL_TIMEOUT_SEC kasıtlı olarak UZUN
+        tutulur ki arka plan sağlık kontrolü henüz hiç çalışmamış olsun."""
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer), \
+             patch("vesper.engine.CAPTURE_QUEUE_POLL_TIMEOUT_SEC", 5.0):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+            assistant._audio_queue.put("bir-parca")
+            time.sleep(0.1)
+
+            assistant.capture._error = OSError("simulated device loss")
+            # Kasıtlı olarak HENÜZ beklemedik — sağlık kontrolü turu 5 saniyede
+            # bir olduğu için capture_failed muhtemelen hala False.
+            self.assertFalse(assistant.capture_failed)
+
+            assistant.stop()
+
+            session = self.repo.get_session(assistant.session_id)
+            self.assertEqual(session.status, STATUS_INTERRUPTED)
+            self.assertFalse(assistant.last_stop_finalized)
+
+    def test_stop_after_capture_failure_marks_interrupted_not_completed(self):
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+            session_id = assistant.session_id
+
+            for i in range(3):
+                assistant._audio_queue.put(f"parca-{i}")
+            time.sleep(0.2)  # 3 parçanın işlenmesi için yeterli
+
+            assistant.capture._error = OSError("simulated device loss")
+
+            final_summary = assistant.stop()
+
+            self.assertTrue(assistant.last_stop_drained, "drain kendisi yine de tamamlanmalıydı")
+            self.assertFalse(assistant.last_stop_finalized, "temiz olmayan bitim finalized=True üretmemeli")
+            self.assertEqual(assistant.status, "Durduruldu (ses kaynağı koptu)")
+
+            session = self.repo.get_session(session_id)
+            self.assertEqual(session.status, STATUS_INTERRUPTED)
+            self.assertIsNotNone(session.ended_at)
+
+            segments = self.repo.get_segments(session_id)
+            self.assertEqual(len(segments), 3, "arızadan ÖNCE yakalanan parçalar kalıcı kalmalı")
+
+            final = self.repo.get_latest_summary(session_id, SUMMARY_FINAL)
+            self.assertIsNotNone(final, "yakalanan kısmın final özeti yine de üretilmeli")
+            self.assertIn("FINAL", final.content)
+            self.assertIn("FINAL", final_summary)
+
+            outputs = list(Path(config.OUTPUT_DIR).glob("webinar_*.md"))
+            self.assertEqual(len(outputs), 1, "Markdown dışa aktarımı yine de yazılmalı")
+
+    def test_normal_completion_leaves_no_capture_error(self):
+        """Düzenli tamamlanma yolunda hiçbir regresyon olmamalı: capture
+        hiç hata bildirmediyse oturum yine STATUS_COMPLETED olarak biter."""
+        with patch("vesper.engine.AudioCapture", FakeAudioCapture), \
+             patch("vesper.engine.Transcriber", FakeTranscriber), \
+             patch("vesper.engine.Summarizer", FakeSummarizer):
+            import vesper.engine as main_module
+
+            assistant = main_module.WebinarAssistant(repository=self.repo)
+            assistant.start()
+            self.assertIsNone(assistant.capture.get_error())
+            self.assertFalse(assistant.capture_failed)
+
+            assistant._audio_queue.put("parca")
+            assistant.stop()
+
+            session = self.repo.get_session(assistant.session_id)
+            self.assertEqual(session.status, STATUS_COMPLETED)
+            self.assertTrue(assistant.last_stop_finalized)
 
 
 if __name__ == "__main__":

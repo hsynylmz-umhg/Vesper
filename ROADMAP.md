@@ -41,7 +41,7 @@ mimari kurallar için `CLAUDE.md`'ye bakılmalıdır.
 ## v0.3.0 — Vesper listens
 
 - [x] Ses kaynağı / cihaz seçimi (basit cihaz seçici; uygulama bazlı loopback ayrı ve daha zor bir alt görevdir)
-- [ ] Birden fazla LLM modeli / hız-kalite profili
+- [x] Birden fazla LLM modeli / hız-kalite profili
 
 ## v0.4.0 — Vesper speaks
 

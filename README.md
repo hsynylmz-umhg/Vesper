@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Listens to your webinars, hands you the minutes.</b><br>
-  Local Whisper + Gemma. No cloud APIs.
+  Local Whisper + Ollama. No cloud APIs.
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ---
 
-Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı doğrudan **hoparlör çıkışından** dinler; konuşmayı Türkçe metne dönüştürür, oturum sürerken düzenli olarak güncellenen bir **canlı özet** tutar ve oturum bittiğinde **tutanak formatında final özet + tam transkript** bırakır.
+Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı doğrudan **hoparlör çıkışından** (varsayılan çıkış ya da seçtiğin bir çıkış cihazı) dinler; konuşmayı Türkçe metne dönüştürür, oturum sürerken düzenli olarak güncellenen bir **canlı özet** tutar ve oturum bittiğinde **tutanak formatında final özet + tam transkript** bırakır.
 
 Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut AI servisine gönderilmez ve API anahtarı gerekmez. Modeller ilk kullanımda indirildikten sonra temel inference akışı yerel olarak çalışabilir.
 
@@ -61,8 +61,8 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
            │                    her parça üretildiği anda
            ▼                    kalıcı olarak yazılır
 ┌──────────────────────┐
-│    Ollama + Gemma    │
-│         CPU          │
+│    Ollama + LLM      │
+│  (Gemma / Qwen) CPU  │
 └──────────┬───────────┘
            │
            ▼
@@ -72,13 +72,13 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
   outputs/*.md (dışa aktarım)  +  Geçmiş sekmesi (SQLite'tan okunur)
 ```
 
-- **Ses yakalama:** Windows'un WASAPI loopback özelliğini kullanır. Mikrofonu dinlemek yerine varsayılan çıkış cihazından oynatılan sesi yakalar.
+- **Ses yakalama:** Windows'un WASAPI loopback özelliğini kullanır. Mikrofonu dinlemek yerine bir çıkış cihazından oynatılan sesi yakalar. Varsayılan seçenek **"Sistem varsayılanı (otomatik)"** Windows'un varsayılan çıkışını kullanır; oturumu başlatmadan önce listeden belirli bir WASAPI loopback çıkış kaynağını da seçebilirsin. Seçilen şey bir *çıkış cihazıdır* — belirli bir uygulamanın sesini ayırmak (uygulama bazlı loopback) henüz desteklenmez.
 - **Konuşma tespiti:** `webrtcvad`, sesi konuşma ve sessizlik sınırlarına göre parçalar; gereksiz sessiz bölümlerin Whisper'a gönderilmesini azaltır.
 - **ASR:** `faster-whisper` + CTranslate2 üzerinde Whisper large-v3-turbo, NVIDIA GPU ile çalışır.
-- **Özetleme:** Ollama üzerinden yerel Gemma modeli kullanılır. Varsayılan yapılandırmada Gemma CPU'da tutularak GPU belleği Whisper'a bırakılır.
+- **Özetleme:** Ollama üzerinden yerel bir LLM kullanılır. İki profil vardır: **Kaliteli** (`gemma4:e2b`, varsayılan) ve **Hızlı** (`qwen2.5:3b`). Referans makinede Qwen'in özetleri daha hızlı ürettiği gözlendi; iki modelin çıktı ayrıntısı/kalitesi farklı olabilir. Vesper'ın tasarımında özetleme her iki profilde de CPU'da çalışır; böylece GPU belleği Whisper'a kalır.
 - **Canlı özet:** Belirlenen aralıklarla o ana kadarki transkript yeniden özetlenir.
-- **Kalıcılık (v0.2.0):** Her transkript parçası ve her özet, üretildiği anda `data/vesper.db` (SQLite) içine yazılır — Durdur'a basılmasını beklemez. Uygulama beklenmedik şekilde kapanırsa (çökme, güç kesintisi, `kill`), o ana kadar transkript edilmiş olan her şey diskte kalır ve bir sonraki açılışta Geçmiş'te "yarıda kesildi" olarak görünür. `outputs/*.md` dosyaları hâlâ üretilir ama artık bir dışa aktarımdır — kaynak veri SQLite'tadır.
-- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir. "Oturum" (canlı görünüm) ve "Geçmiş" (kayıtlı oturumlar) olmak üzere iki sekme vardır.
+- **Kalıcılık (v0.2.0):** Her transkript parçası ve her özet, üretildiği anda `data/vesper.db` (SQLite) içine yazılır — Durdur'a basılmasını beklemez. Uygulama beklenmedik şekilde kapanırsa (çökme, güç kesintisi, `kill`), o ana kadar transkript edilmiş olan her şey diskte kalır ve bir sonraki açılışta Geçmiş'te "yarıda kesildi" olarak görünür. `outputs/*.md` dosyaları hâlâ üretilir ama artık bir dışa aktarımdır — kaynak veri SQLite'tadır. Her özet, hangi modelle üretildiği bilgisiyle birlikte kaydedilir.
+- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir. "Oturum" (canlı görünüm) ve "Geçmiş" (kayıtlı oturumlar) olmak üzere iki sekme vardır. "Oturum" sekmesinde ses kaynağı ve LLM profili seçicileri bulunur; ikisi de oturum sürerken kilitlidir.
 
 ## Gereksinimler
 
@@ -114,7 +114,7 @@ NVIDIA Driver
      ↓
 CUDA Toolkit + cuDNN
      ↓
-Ollama + Gemma
+Ollama + modeller
      ↓
 Python environment
      ↓
@@ -234,17 +234,34 @@ Bu nedenle Vesper için CUDA DLL'lerinin tercihen **tek ve tutarlı bir NVIDIA C
 
 > Vesper'ın referans kurulumu CUDA/cuDNN çalışma zamanı için pip'teki `nvidia-cublas-cu12` ve `nvidia-cudnn-cu12` paketlerini kullanmaz. Amaç olası DLL sürüm ve arama yolu çakışmalarını azaltmaktır.
 
-### 4. Ollama + Gemma
+### 4. Ollama + modeller
 
 [Ollama](https://ollama.com/) Windows sürümünü kur.
 
-Ardından:
+Vesper'ın iki özetleme profili vardır:
+
+| Profil | Model | Gerekli mi? |
+|---|---|---|
+| **Kaliteli** (varsayılan) | `gemma4:e2b` | Gerekli — varsayılan profildir |
+| **Hızlı** | `qwen2.5:3b` | İsteğe bağlı — yalnızca Hızlı profili kullanacaksan |
+
+Varsayılan (Kaliteli) profil için gerekli model:
 
 ```powershell
 ollama pull gemma4:e2b
 ```
 
-Modeli doğrula:
+Yalnızca **Hızlı** profili de kullanmak istiyorsan ayrıca:
+
+```powershell
+ollama pull qwen2.5:3b
+```
+
+Hızlı profili kullanmayacaksan `qwen2.5:3b` indirmen gerekmez.
+
+> Vesper hiçbir Ollama modelini kendiliğinden indirmez. Modelleri yukarıdaki gibi sen indirirsin; bir profilin modeli yüklü değilse Vesper o profile geçişi reddeder ve mevcut profil aktif kalır.
+
+Modelleri doğrula:
 
 ```powershell
 ollama list
@@ -256,7 +273,7 @@ API'nin çalıştığını kontrol etmek istersen:
 curl http://localhost:11434/api/tags
 ```
 
-Varsayılan Vesper yapılandırması özetleme modelini CPU'da çalıştırır:
+Varsayılan Vesper yapılandırması, her iki profilde de özetleme modelini CPU'da çalıştırır:
 
 ```python
 OLLAMA_FORCE_CPU = True
@@ -401,6 +418,13 @@ http://192.168.1.23:8080
 
 ### Kullanım
 
+**Başlatmadan önce (isteğe bağlı):** Başlat düğmesinin yanındaki iki seçiciyi kullanabilirsin:
+
+- **Ses cihazı:** Varsayılan **"Sistem varsayılanı (otomatik)"** önceki davranışı korur: Windows'un varsayılan çıkış cihazının sesi yakalanır. İstersen listeden belirli bir WASAPI loopback çıkış kaynağını seçebilirsin. Belirli bir uygulamanın sesini ayırmak (uygulama bazlı loopback) henüz desteklenmez. Cihaz listesi uygulama açıkken canlı olarak güncellenmeyebilir; kullanacağın cihazı `python ui.py`'yi başlatmadan önce bağla.
+- **LLM profili:** **Kaliteli (gemma4:e2b)** varsayılandır. **Hızlı (qwen2.5:3b)** için önce `ollama pull qwen2.5:3b` gerekir (bkz. Kurulum, adım 4).
+
+Oturum sürerken iki seçici de kilitlidir; **Durdur ve Final Özet Çıkar**'dan sonra tekrar açılır. Oturum sırasında kaynak değiştirilemez; Vesper başka bir cihaza kendiliğinden geçmez ve kaynak koparsa yeniden bağlanmaz.
+
 1. **Başlat** düğmesine bas. Yeni oturum otomatik olarak `Webinar — YYYY-MM-DD HH:MM` gibi bir başlıkla kaydedilmeye başlar (SQLite'a).
 2. Webinarı, canlı dersi veya toplantıyı oynat.
 3. Vesper konuşma parçalarını algılayıp Whisper'a gönderir; her parça üretildiği anda kalıcı olarak yazılır.
@@ -422,7 +446,7 @@ Arayüzsüz kullanım için:
 python main.py
 ```
 
-Ctrl+C ile durdurulduğunda final özet oluşturulur ve aynı şekilde kalıcı olarak kaydedilir.
+Ctrl+C ile durdurulduğunda final özet oluşturulur ve aynı şekilde kalıcı olarak kaydedilir. Bu modda ses kaynağı ve LLM profili seçilemez; varsayılanlar (Sistem varsayılanı ve Kaliteli profil) kullanılır.
 
 ### Örnek çıktı
 
@@ -462,12 +486,16 @@ Vesper'ın çalışma ayarları `config.py` içerisindedir.
 | `WHISPER_ALLOW_CPU_FALLBACK` | `True` | GPU başlatılamazsa CPU'ya geçilmesine izin verir |
 | `WHISPER_GPU_INDEX` | `0` | Kullanılacak CUDA cihazı |
 | `WHISPER_MIN_CHUNK_SEC` | `0.3` | Çok kısa ses parçalarını filtreler |
-| `OLLAMA_MODEL` | `"gemma4:e2b"` | Özetlemede kullanılan yerel model |
-| `OLLAMA_NUM_CTX` | `32768` | Ollama bağlam penceresi |
-| `OLLAMA_FORCE_CPU` | `True` | Gemma'yı CPU üzerinde tutar |
+| `LLM_PROFILES` | `fast` → `qwen2.5:3b` (Hızlı), `quality` → `gemma4:e2b` (Kaliteli) | Arayüzdeki LLM profilleri. Her profil yalnızca bir ad (`label`) ve bir model (`model`) taşır; model adı açık etiketli olmalı (ör. `qwen2.5:3b`) ve `ollama list` çıktısıyla birebir aynı yazılmalıdır |
+| `DEFAULT_LLM_PROFILE` | `"quality"` | Uygulama açıldığında seçili gelen profil (Kaliteli) |
+| `OLLAMA_MODEL` | `"gemma4:e2b"` | Geriye dönük uyumluluk için eski (legacy) yedek ayar: profil tanımı bulunamadığında veya geçersiz olduğunda kullanılır. Varsayılan yapılandırmada modeli değiştirmek için `LLM_PROFILES` düzenlenir |
+| `OLLAMA_NUM_CTX` | `32768` | Ollama bağlam penceresi; tüm profiller için ortaktır |
+| `OLLAMA_FORCE_CPU` | `True` | Özetleme LLM'ini (her iki profilde de) CPU üzerinde tutar; tüm profiller için ortaktır |
 | `LIVE_SUMMARY_INTERVAL_SEC` | `240` | Canlı özet yenileme aralığı |
 | `SILENCE_TIMEOUT_MS` | `700` | Konuşma parçasını kapatmadan önce beklenecek sessizlik |
 | `MAX_CHUNK_SECONDS` | `25` | Tek Whisper parçasının maksimum uzunluğu |
+
+> v0.2.0'dan yükseltiyorsan ve `OLLAMA_MODEL`'i değiştirmiştiysen: seçtiğin modeli artık `LLM_PROFILES` içindeki ilgili profile yaz.
 
 ### Dil algılama
 
@@ -508,12 +536,12 @@ Local Whisper
      ↓
 Local Transcript
      ↓
-Local Ollama / Gemma
+Local Ollama (Gemma / Qwen)
      ↓
 Local Markdown Output
 ```
 
-Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthropic gibi harici bir AI API'sine göndermez.
+Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthropic gibi harici bir AI API'sine göndermez. Bir LLM profili seçilirken yapılan model kontrolü yalnızca yerel Ollama servisine sorar; model indirmez ve bulut tabanlı bir model API'si çağırmaz.
 
 **Kalıcı depolama (v0.2.0):** Transkript parçaları ve özetler artık oturum sırasında `data/vesper.db` (yerel bir SQLite dosyası) içine yazılır; bu, `outputs/` altındaki Markdown dosyalarıyla aynı diskte, tamamen yerel bir depodur — hiçbir ağ isteği içermez. Geçmişi tamamen temizlemek istersen uygulama kapalıyken `data/vesper.db` dosyasını silmen yeterlidir; Vesper bir sonraki açılışta veritabanını sıfırdan oluşturur.
 
@@ -522,7 +550,7 @@ Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthr
 - Python bağımlılıklarının,
 - Whisper modelinin,
 - Ollama'nın,
-- Gemma modelinin
+- Ollama modellerinin (varsayılan Kaliteli profil için Gemma, isteğe bağlı Hızlı profil için Qwen)
 
 indirilmesi için internet bağlantısı gerekir.
 
@@ -534,7 +562,7 @@ Modeller ve bağımlılıklar hazır olduğunda temel transkripsiyon ve özetlem
 
 ## Tasarım kararları
 
-### Neden Whisper GPU'da, Gemma CPU'da?
+### Neden Whisper GPU'da, özetleme LLM'i CPU'da?
 
 Transkripsiyon gecikmeye duyarlıdır. Özetleme ise yalnızca belirli aralıklarla gerçekleştirilir.
 
@@ -542,14 +570,14 @@ Bu nedenle varsayılan mimari:
 
 ```text
 NVIDIA GPU → Whisper
-CPU        → Gemma
+CPU        → Ollama LLM (Gemma / Qwen)
 ```
 
 şeklindedir.
 
-Test sisteminde large-v3-turbo çalışma koşullarına göre yaklaşık 2–3 GB VRAM kullanır. Gemma'yı aynı sınırlı VRAM alanına eklemek iki iş yükünün GPU belleği için yarışmasına neden olabilir.
+Test sisteminde large-v3-turbo çalışma koşullarına göre yaklaşık 2–3 GB VRAM kullanır. LLM'i aynı sınırlı VRAM alanına eklemek iki iş yükünün GPU belleği için yarışmasına neden olabilir.
 
-Gemma'yı CPU'da tutmak GPU belleğini ASR'ye ayırır ve davranışı daha öngörülebilir hale getirir.
+LLM'i CPU'da tutmak GPU belleğini ASR'ye ayırır ve davranışı daha öngörülebilir hale getirir. `OLLAMA_FORCE_CPU = True` ayarı hem Hızlı hem Kaliteli profil için geçerlidir; profiller bu ayarı değiştiremez.
 
 Daha yüksek VRAM'e sahip sistemlerde farklı dağılımlar denenebilir.
 
@@ -749,7 +777,15 @@ ollama list
 curl http://localhost:11434/api/tags
 ```
 
-ile Ollama'nın çalıştığını ve modelin mevcut olduğunu doğrula.
+ile Ollama'nın çalıştığını ve kullandığın profilin modelinin (`gemma4:e2b`, Hızlı için `qwen2.5:3b`) listede olduğunu doğrula. Model yüklü değilse özet üretilemez.
+
+### LLM profili değiştirilemiyor
+
+Profil seçerken kırmızı bir uyarı görüyor ve seçici önceki profile dönüyorsa Ollama çalışmıyor ya da seçtiğin profilin modeli yüklü değil demektir. Mevcut profil aktif kalır. Eksik modeli indir (Hızlı için `ollama pull qwen2.5:3b`), `ollama list` ile doğrula ve profili yeniden seç. Vesper modelleri kendiliğinden indirmez. Profil seçici oturum sürerken kilitlidir; profili oturumu başlatmadan önce değiştir.
+
+### Canlı özet geçici olarak üretilemiyor
+
+Oturum sırasında Ollama yanıt vermezse canlı özet güncellenemez ve arayüzde bir uyarı görünür. Bu sırada transkripsiyon devam eder ve son başarılı canlı özet ekranda kalır. Vesper sonraki canlı özet döngülerinde yeniden dener; Ollama tekrar çalışır hâle geldiğinde kendiliğinden toparlanır. Final özet istendiği anda Ollama erişilemezse final özet oluşturulamayabilir ve oturum temiz bir "tamamlandı" olarak gösterilmez; oturum sırasında yazılan transkript yine de `data/vesper.db` içinde kalır.
 
 ### WASAPI loopback cihazı bulunamıyor
 
@@ -771,6 +807,12 @@ Ayarlar
 ```
 
 altındaki varsayılan cihazı kontrol et.
+
+Vesper arayüzünde ses cihazı seçicisinden **Sistem varsayılanı (otomatik)** seçeneğini dene. Cihaz listesi uygulama açıkken canlı olarak güncellenmeyebilir; kullanacağın cihazı `python ui.py`'yi başlatmadan önce bağla. Başlat'a basınca seçtiğin cihazın artık mevcut olmadığını bildiren bir uyarı çıkarsa **Sistem varsayılanı (otomatik)** seçeneğini seç veya Vesper'ı yeniden başlat.
+
+### Oturum sırasında ses kaynağı kayboldu
+
+Seçili çıkış cihazı oturum sırasında kaybolursa (örneğin Bluetooth hoparlör kapanırsa) durum satırında "Ses kaynağı beklenmedik şekilde koptu" yazar. O ana kadar yakalanan ses işlenir ve kaydedilir. **Durdur ve Final Özet Çıkar**'a bastığında o ana kadarki içerik için final özet ve Markdown dışa aktarımı yine üretilir; ancak oturum Geçmiş'te "tamamlandı" yerine "yarıda kesildi" olarak görünür ve bir uyarı bildirimi alabilirsin. Vesper başka bir cihaza kendiliğinden geçmez ve cihaz geri gelse de yeniden bağlanmaz: yeni bir oturumda kaynağı seçip **Başlat**'a bas.
 
 ### `webrtcvad`: Microsoft Visual C++ 14.0 or greater is required
 
@@ -833,16 +875,19 @@ Vesper/
 │   ├── engine.py           # WebinarAssistant: capture→transcribe→summarize akışı,
 │   │                       # güvenli kapanış / queue-drain garantisi
 │   ├── config.py           # Merkezi yapılandırma
-│   ├── audio_capture.py    # WASAPI loopback + WebRTC VAD
+│   ├── audio_capture.py    # WASAPI loopback (cihaz seçimi) + WebRTC VAD
 │   ├── transcriber.py      # faster-whisper / CUDA / fallback
-│   ├── summarizer.py       # Ollama + Gemma
+│   ├── summarizer.py       # Ollama istemcisi + LLM profilleri (Hızlı / Kaliteli)
 │   ├── session.py          # Oturum / Segment / Özet veri modelleri
 │   ├── storage.py          # SQLite bağlantı yönetimi + şema
 │   └── repository.py       # Kalıcılık katmanı — tüm SQL burada
 │
 ├── tests/
 │   ├── test_persistence.py
-│   └── test_lifecycle_integration.py
+│   ├── test_lifecycle_integration.py
+│   ├── test_audio_capture_device_selection.py
+│   ├── test_audio_capture_runtime_failure.py
+│   └── test_summarizer_profiles.py
 │
 └── assets/
    ├── Vesper.jpg
@@ -855,7 +900,7 @@ Vesper/
 
 Vesper şu anda erken aşamada bir açık kaynak projesidir.
 
-Mevcut sürüm gerçek bir Windows 11 makinede:
+Mevcut geliştirme durumu (v0.3.0 sürüm adayı) gerçek bir Windows 11 makinede:
 
 ```text
 Windows 11
@@ -867,7 +912,7 @@ CUDA Toolkit 12.8
 cuDNN 9
 ```
 
-ile Türkçe içerikler üzerinde test edilmiştir.
+ile Türkçe içerikler üzerinde test edilmiştir. Bu testler varsayılan WASAPI loopback çıkışını, bir Bluetooth hoparlör çıkışını ve her iki LLM profilini (Hızlı ve Kaliteli) kapsamıştır.
 
 Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına gelmez. Farklı NVIDIA GPU'lar, Windows sürümleri ve ses cihazlarından gelen hata raporları özellikle değerlidir.
 
@@ -875,7 +920,7 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Şu anki aktif sürüm **v0.2.0 — "Vesper remembers"**.
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. **v0.2.0 — "Vesper remembers"** yayınlandı. **v0.3.0 — "Vesper listens"** için özellik geliştirmesi tamamlandı (ses kaynağı seçimi ve LLM hız/kalite profilleri); merge, etiketleme ve release süreci henüz tamamlanmadı.
 
 Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 
@@ -897,6 +942,8 @@ Python:
 faster-whisper:
 CTranslate2:
 Vesper commit/version:
+Selected audio source:
+Selected LLM profile / Ollama model:
 ```
 
 CUDA/GPU sorunlarında ayrıca:
@@ -923,4 +970,4 @@ Vesper aşağıdaki açık kaynak projeleri ve araçları kullanır:
 - [Whisper large-v3-turbo CT2](https://huggingface.co/deepdml/faster-whisper-large-v3-turbo-ct2)
 - [Ollama](https://ollama.com)
 - [Gemma](https://ai.google.dev/gemma)
--
+- [Qwen](https://github.com/QwenLM/Qwen2.5)

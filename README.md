@@ -900,7 +900,7 @@ Vesper/
 
 Vesper şu anda erken aşamada bir açık kaynak projesidir.
 
-Mevcut geliştirme durumu (v0.3.0 sürüm adayı) gerçek bir Windows 11 makinede:
+Mevcut sürüm (v0.3.0) gerçek bir Windows 11 makinede:
 
 ```text
 Windows 11
@@ -920,7 +920,7 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. **v0.2.0 — "Vesper remembers"** yayınlandı. **v0.3.0 — "Vesper listens"** için özellik geliştirmesi tamamlandı (ses kaynağı seçimi ve LLM hız/kalite profilleri); merge, etiketleme ve release süreci henüz tamamlanmadı.
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Son sürüm **v0.3.0 — "Vesper listens"** (ses kaynağı seçimi ve LLM hız/kalite profilleri) tamamlandı ve yayınlandı; önceki sürüm **v0.2.0 — "Vesper remembers"**.
 
 Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 

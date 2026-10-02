@@ -15,7 +15,10 @@ from typing import Optional
 # Oturum durumları
 STATUS_ACTIVE = "active"          # şu anda kaydediliyor
 STATUS_COMPLETED = "completed"    # Durdur ile temiz şekilde bitti
-STATUS_INTERRUPTED = "interrupted"  # uygulama/Python çöktü, temiz kapanmadı
+STATUS_INTERRUPTED = "interrupted"  # temiz kapanmadı: uygulama/Python çöktü
+                                     # YA DA ses kaynağı (ör. cihaz kaybı/host
+                                     # hatası) oturum SIRASINDA beklenmedik
+                                     # şekilde koptu (v0.3.0)
 
 # Özet türleri
 SUMMARY_LIVE = "live"

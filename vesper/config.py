@@ -45,6 +45,29 @@ OLLAMA_URL = "http://localhost:11434"
 # Gemma'yı CPU'da çalıştırıyoruz (aşağıya bak), GPU'yu tamamen Whisper'a bırakıyoruz.
 OLLAMA_MODEL = "gemma4:e2b"
 
+# v0.3.0 — LLM hız/kalite profilleri (yalnızca ÖZETLEME için).
+# Her profil SADECE iki alan taşır: "label" (arayüzde görünen ad) ve "model"
+# (Ollama'daki AÇIK etiketli model adı, ör. "qwen2.5:3b"; örtük ":latest"
+# YOKTUR). OLLAMA_URL, OLLAMA_NUM_CTX ve OLLAMA_FORCE_CPU bilinçli olarak
+# profillerin DIŞINDA, global kalır: hiçbir profil LLM'i GPU'ya taşıyamaz
+# (Whisper -> GPU, Ollama LLM -> CPU; bkz. aşağıdaki OLLAMA_FORCE_CPU notu).
+# Varsayılan "quality" = v0.2.x'te kullanılan gemma4:e2b; yükseltme yapan bir
+# kurulum sessizce başka bir modele GEÇMEZ.
+# LLM_PROFILES tanımsızsa summarizer.py yukarıdaki OLLAMA_MODEL'den sessizce
+# sentetik bir "legacy" profil kurar; tanımlı ama bozuksa (ya da
+# DEFAULT_LLM_PROFILE geçersizse) uyarı loglayıp aynı yedeğe düşer.
+LLM_PROFILES = {
+    "fast": {
+        "label": "Hızlı",
+        "model": "qwen2.5:3b",
+    },
+    "quality": {
+        "label": "Kaliteli",
+        "model": "gemma4:e2b",
+    },
+}
+DEFAULT_LLM_PROFILE = "quality"
+
 # Ollama'nın PC BAŞINA varsayılan bağlam penceresi 4096 token — Gemma 4'ün
 # gerçek kapasitesinin (128K) çok altında ve bunu SESSİZCE (hata vermeden) kesiyor.
 # Bunu açıkça büyük tutmazsak uzun bir webinarın özeti yarıda kesilmiş transkriptten

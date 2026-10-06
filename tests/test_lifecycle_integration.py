@@ -108,7 +108,7 @@ class FakeTranscriber:
     def __init__(self):
         pass
 
-    def transcribe(self, chunk) -> str:
+    def transcribe(self, chunk, language=None) -> str:
         time.sleep(0.02)
         return str(chunk)
 
@@ -128,7 +128,7 @@ class ControllableFakeTranscriber:
         self.release_event = None
         self.reached_block = threading.Event()
 
-    def transcribe(self, chunk) -> str:
+    def transcribe(self, chunk, language=None) -> str:
         if self.block_on is not None and chunk == self.block_on:
             self.reached_block.set()
             self.release_event.wait()

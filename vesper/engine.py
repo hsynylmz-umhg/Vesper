@@ -11,6 +11,11 @@ v0.3.0: canlı özet işçisi (_summarize_loop) bir özetleme istisnasıyla ÖLM
 (bkz. _run_live_summary_once). LLM hız/kalite profili düz Python metotlarıyla
 seçilir (list_llm_profiles / set_llm_profile / get_active_llm_profile_key) ve
 HER özet, gerçekte kullanılan modelin adıyla summaries.model'e yazılır.
+
+v0.4.0: konuşma (kaynak/Whisper) dili düz Python metotlarıyla seçilir
+(list_source_languages / get_source_language_key / set_source_language) ve
+start()'ta oturum için DONDURULUR (bkz. start). Seçim yalnızca transkripsiyon
+dilini belirler; özet dili Türkçe kalır (summary_language = "tr").
 """
 
 import logging
@@ -28,6 +33,7 @@ from .summarizer import Summarizer
 from .repository import SessionRepository
 from .session import STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
 from .storage import Database
+from .language import resolve_source_languages, whisper_language_for
 
 log = logging.getLogger("main")
 if not logging.getLogger().handlers:
@@ -114,6 +120,11 @@ class WebinarAssistant:
         self.transcriber = Transcriber()
         self.summarizer = Summarizer()
 
+        # v0.4.0: konuşma (kaynak) dili seçenekleri ve başlangıç seçimi — config
+        # tabanlı, düz Python verisi (bkz. vesper/language.py). Seçim oturum
+        # başında start()'ta DONDURULUR; config.WHISPER_LANGUAGE asla değiştirilmez.
+        self._source_languages, self._source_language_key = resolve_source_languages()
+
         self.repository = repository or SessionRepository(_default_database)
 
         # Uygulama önceki çalıştırmada temiz kapanmadıysa (çökme, kill, güç
@@ -154,6 +165,28 @@ class WebinarAssistant:
         self.summarizer.set_profile(key)
 
     # ------------------------------------------------------------------ #
+    # v0.4.0 — konuşma (kaynak) dili seçimi. UI SADECE bu üç metotla konuşur;
+    # düz Python verisi kullanılır, NiceGUI'ye dair hiçbir şey bu sınıra geçmez
+    # (CLAUDE.md §5.7). Politika ses cihazı/LLM profiliyle aynıdır: oturum
+    # sürerken seçim değişmez. Seçim YALNIZCA Whisper konuşma dilini belirler;
+    # özet dili Türkçe kalır. Resmi seçenekler: tr / en / auto (= Whisper None).
+    def list_source_languages(self) -> List[Dict[str, str]]:
+        return [
+            {"key": key, "label": entry["label"]}
+            for key, entry in self._source_languages.items()
+        ]
+
+    def get_source_language_key(self) -> str:
+        return self._source_language_key
+
+    def set_source_language(self, key: str) -> None:
+        if self._running:
+            raise RuntimeError("Oturum sürerken konuşma dili değiştirilemez.")
+        # Bilinmeyen/metin olmayan anahtar ValueError fırlatır; durum DEĞİŞMEDEN kalır.
+        whisper_language_for(self._source_languages, key)
+        self._source_language_key = key
+
+    # ------------------------------------------------------------------ #
     def start(self):
         if self._running:
             return
@@ -165,6 +198,14 @@ class WebinarAssistant:
                 "Önceki oturumun transkripsiyon işçisi hâlâ çalışıyor "
                 "(muhtemelen bir zaman aşımı sonrası). Yeni oturum başlatılamaz."
             )
+
+        # v0.4.0: oturum-yerel konuşma dili ANLIK GÖRÜNTÜSÜ. Bu TEK değer, bu oturumun
+        # her transcribe() çağrısı, sessions.source_language ve segments.language
+        # için kullanılır; config'e veya motor durumuna bir daha bakılmaz. Böylece
+        # sonradan değişen bir seçim (veya yeni bir oturum) eski bir işçiyi
+        # etkileyemez. None = Otomatik: Whisper parça başına algılar; veritabanına
+        # NULL yazılır ("otomatik mod yapılandırıldı", "algılanan dil" DEĞİL).
+        session_language = whisper_language_for(self._source_languages, self._source_language_key)
 
         self.full_transcript = []
         self.live_summary = ""
@@ -216,7 +257,7 @@ class WebinarAssistant:
                 title=default_title,
                 source_type="system_audio",
                 source_name=self.capture.get_active_device_name(),
-                source_language=config.WHISPER_LANGUAGE,
+                source_language=session_language,
                 summary_language="tr",
             )
         except Exception:
@@ -225,7 +266,9 @@ class WebinarAssistant:
             self.session_id = None
             log.exception("Yeni oturum SQLite'a kaydedilemedi — bu oturum kalıcı OLMAYACAK")
 
-        self._transcribe_thread = threading.Thread(target=self._transcribe_loop, daemon=True)
+        self._transcribe_thread = threading.Thread(
+            target=self._transcribe_loop, args=(session_language,), daemon=True
+        )
         self._summarize_thread = threading.Thread(
             target=self._summarize_loop, args=(my_generation,), daemon=True
         )
@@ -394,7 +437,9 @@ class WebinarAssistant:
             log.error("Ses yakalama işçisi çalışırken çöktü: %s", self.capture.get_error())
 
     # ------------------------------------------------------------------ #
-    def _transcribe_loop(self):
+    def _transcribe_loop(self, session_language: Optional[str]):
+        """`session_language`: start()'ın dondurduğu oturum-yerel Whisper dili
+        (None = Otomatik). Bu işçi dili ASLA yeniden okumaz/çözmez."""
         try:
             # Artık `_running`/`empty()` yoklamıyoruz: stop() üreticinin kesin
             # öldüğünü kanıtladıktan SONRA kuyruğa _TRANSCRIBE_SENTINEL koyar.
@@ -421,7 +466,7 @@ class WebinarAssistant:
                 audio_chunk = item
 
                 started_at = datetime.now(timezone.utc)
-                text = self.transcriber.transcribe(audio_chunk)
+                text = self.transcriber.transcribe(audio_chunk, language=session_language)
                 ended_at = datetime.now(timezone.utc)
 
                 if text:
@@ -435,7 +480,7 @@ class WebinarAssistant:
                             self.repository.append_segment(
                                 self.session_id, sequence=seq,
                                 started_at=started_at, ended_at=ended_at,
-                                text=text, language=config.WHISPER_LANGUAGE,
+                                text=text, language=session_language,
                             )
                         except Exception:
                             # Bellekteki transkript korunuyor (yukarıda eklendi);

@@ -30,8 +30,18 @@ MAX_CHUNK_SECONDS = 25
 # bu yüzden CTranslate2'ye dönüştürülmüş HuggingFace deposunu doğrudan veriyoruz.
 WHISPER_MODEL = "deepdml/faster-whisper-large-v3-turbo-ct2"
 WHISPER_DEVICE = "cuda"                # Whisper'ı her zaman GPU'da tut (gerçek zamanlı olmalı)
-WHISPER_LANGUAGE = "tr"                # Ağırlıklı Türkçe içerik: sabitlemek hız + doğruluk kazandırır
-                                        # Webinar bazen İngilizce de içeriyorsa None yap (otomatik algılama, biraz daha yavaş)
+WHISPER_LANGUAGE = "tr"                # v0.4.0: VARSAYILAN konuşma dili seçimi ("tr" | "en" | None = Otomatik)
+                                        # Arayüz seçicisi bu değerle başlar. Başka bir değer uyarıyla "tr"ye döner (bkz. vesper/language.py).
+
+# v0.4.0 — Konuşma (kaynak) dili seçenekleri. Resmi seçenekler TAM OLARAK bu üçüdür;
+# yalnızca "label" metni ve sıra değiştirilebilir. Anahtar/değer eşlemesi (tr->"tr",
+# en->"en", auto->None) sabittir; geçersiz bir tablo uyarıyla yerleşik kopyaya döner.
+# Bu seçici YALNIZCA Whisper konuşma dilini belirler; özet dili Türkçe kalır.
+SOURCE_LANGUAGES = {
+    "tr": {"label": "Türkçe", "whisper_language": "tr"},
+    "en": {"label": "English", "whisper_language": "en"},
+    "auto": {"label": "Otomatik", "whisper_language": None},   # parça başına otomatik algılama
+}
 
 # ============================================================
 # ÖZETLEME — Gemma 4 (Ollama üzerinden)

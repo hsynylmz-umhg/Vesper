@@ -14,6 +14,11 @@ from typing import List, Optional, Set, Tuple
 import numpy as np
 
 from . import config
+from .language import resolve_default_whisper_language
+
+# v0.4.0: transcribe(language=...) için "argüman verilmedi" işareti. None ANLAMLIDIR
+# (Otomatik algılama), bu yüzden varsayılan değer olarak None KULLANILAMAZ.
+_USE_CONFIG_LANGUAGE = object()
 
 log = logging.getLogger("transcriber")
 if not logging.getLogger().handlers:
@@ -171,19 +176,27 @@ class Transcriber:
 
     def _warm_up(self, model: WhisperModel):
         dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
-        segments, _ = model.transcribe(dummy, language=config.WHISPER_LANGUAGE, beam_size=1, without_timestamps=True)
+        segments, _ = model.transcribe(dummy, language=resolve_default_whisper_language(), beam_size=1, without_timestamps=True)
         list(segments)
 
-    def transcribe(self, audio_16k: np.ndarray) -> str:
+    def transcribe(self, audio_16k: np.ndarray, language: Optional[str] = _USE_CONFIG_LANGUAGE) -> str:
         if audio_16k is None or audio_16k.size == 0:
             return ""
         audio = np.ascontiguousarray(audio_16k, dtype=np.float32)
         if audio.size < int(MIN_CHUNK_SEC * SAMPLE_RATE):
             return ""
 
+        # v0.4.0: dil, çağrı başına TEK kez çözülür ve CUDA yeniden deneme yolunda
+        # AYNEN yeniden kullanılır. Argüman verilmediyse yapılandırılmış varsayılanın
+        # GÜVENLİ (normalize) değeri kullanılır; açıkça verilen "tr"/"en"/None olduğu
+        # gibi geçer (None = otomatik algılama).
+        resolved_language = (
+            resolve_default_whisper_language() if language is _USE_CONFIG_LANGUAGE else language
+        )
+
         try:
             with self._lock:
-                return self._transcribe_unlocked(audio)
+                return self._transcribe_unlocked(audio, resolved_language)
         except Exception as e:
             if self.device.startswith("cuda") and _is_cuda_error(e):
                 self._cuda_error_count += 1
@@ -191,14 +204,14 @@ class Transcriber:
                     self._fallback_to_cpu_after_runtime_error()
                     try:
                         with self._lock:
-                            return self._transcribe_unlocked(audio)
+                            return self._transcribe_unlocked(audio, resolved_language)
                     except Exception:
                         pass
             return ""
 
-    def _transcribe_unlocked(self, audio: np.ndarray) -> str:
+    def _transcribe_unlocked(self, audio: np.ndarray, language: Optional[str]) -> str:
         segments, _info = self.model.transcribe(
-            audio, language=config.WHISPER_LANGUAGE, task="transcribe", beam_size=BEAM_SIZE,
+            audio, language=language, task="transcribe", beam_size=BEAM_SIZE,
             condition_on_previous_text=False, vad_filter=False, without_timestamps=True,
             temperature=[0.0, 0.2, 0.4], compression_ratio_threshold=2.4, log_prob_threshold=-1.0, no_speech_threshold=0.6
         )

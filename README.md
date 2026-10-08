@@ -924,7 +924,7 @@ Vesper/
 
 Vesper şu anda erken aşamada bir açık kaynak projesidir.
 
-Mevcut sürüm (v0.3.0) gerçek bir Windows 11 makinede:
+Mevcut sürüm (v0.4.0) gerçek bir Windows 11 makinede:
 
 ```text
 Windows 11
@@ -936,9 +936,7 @@ CUDA Toolkit 12.8
 cuDNN 9
 ```
 
-ile Türkçe içerikler üzerinde test edilmiştir. Bu testler varsayılan WASAPI loopback çıkışını, bir Bluetooth hoparlör çıkışını ve her iki LLM profilini (Hızlı ve Kaliteli) kapsamıştır.
-
-v0.4.0'da eklenen konuşma dili seçimi (Türkçe, English ve karma Türkçe/İngilizce içerik için Otomatik) aynı makinede denenmiştir. Bu sürümün merge/etiket/sürüm kapanışı henüz tamamlanmamıştır; yayınlanmış son sürüm v0.3.0'dır.
+ile Türkçe, English ve karma Türkçe/İngilizce (Otomatik) içerikler üzerinde test edilmiştir. Önceki sürümün (v0.3.0) testleri ayrıca varsayılan WASAPI loopback çıkışını, bir Bluetooth hoparlör çıkışını ve her iki LLM profilini (Hızlı ve Kaliteli) kapsamıştır.
 
 Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına gelmez. Farklı NVIDIA GPU'lar, Windows sürümleri ve ses cihazlarından gelen hata raporları özellikle değerlidir.
 
@@ -946,7 +944,7 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Son sürüm **v0.3.0 — "Vesper listens"** (ses kaynağı seçimi ve LLM hız/kalite profilleri) tamamlandı ve yayınlandı; önceki sürüm **v0.2.0 — "Vesper remembers"**. Üzerinde çalışılan sürüm **v0.4.0 — "Vesper speaks"**: konuşma (kaynak) dili seçici özellik olarak tamamlandı; sürüm kapanışı (merge/etiket) henüz yapılmadı.
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Son sürüm **v0.4.0 — "Vesper speaks"** (konuşma/kaynak dili seçici) tamamlandı ve yayınlandı; önceki sürüm **v0.3.0 — "Vesper listens"** (ses kaynağı seçimi ve LLM hız/kalite profilleri).
 
 Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 

@@ -21,7 +21,7 @@ mimari kurallar için `CLAUDE.md`'ye bakılmalıdır.
 | v0.1.1 | Interface refresh | Yayında |
 | v0.2.0 | Vesper remembers | Yayında |
 | v0.3.0 | Vesper listens | Yayında |
-| v0.4.0 | Vesper speaks | Üzerinde çalışılıyor |
+| v0.4.0 | Vesper speaks | Yayında |
 | v0.5.0 | Vesper understands | Planlandı |
 | v0.6.0 | Vesper attends | Planlandı |
 | v0.7.0 | Vesper sees | Planlandı |

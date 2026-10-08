@@ -28,6 +28,7 @@ waveform_icon = None
 start_button = None
 stop_button = None
 device_select = None
+language_select = None
 llm_profile_select = None
 
 # main.py'deki self.status metinlerinin TAM KARŞILIĞI (nokta rengi, canlı mı)
@@ -82,6 +83,28 @@ def on_device_change(e):
         ui.notify(str(exc), type="negative")
 
 
+def _build_language_options() -> dict:
+    """v0.4.0: konuşma (kaynak) dili seçimi. UI sadece assistant.list_source_languages()
+    üzerinden konuşur. Seçici YALNIZCA transkripsiyon dilini belirler; özet dili
+    Türkçe kalır."""
+    return {
+        option["key"]: f"Konuşma dili: {option['label']}"
+        for option in assistant.list_source_languages()
+    }
+
+
+def on_language_change(e):
+    # Başarısız değişimde seçiciyi geri yüklemek (set_value) bu olayı yeniden
+    # tetikler; zaten seçili dil için hiçbir şey yapma (bkz. on_llm_profile_change).
+    if e.value == assistant.get_source_language_key():
+        return
+    try:
+        assistant.set_source_language(e.value)
+    except Exception as exc:
+        ui.notify(str(exc), type="negative")
+        language_select.set_value(assistant.get_source_language_key())
+
+
 def _build_llm_profile_options() -> dict:
     """v0.3.0: LLM profil seçimi. UI, Summarizer'a DOĞRUDAN bağımlı DEĞİLDİR —
     sadece assistant.list_llm_profiles() üzerinden konuşur (bkz. CLAUDE.md §5.7)."""
@@ -113,6 +136,7 @@ def on_start():
     start_button.disable()
     stop_button.enable()
     device_select.disable()
+    language_select.disable()
     llm_profile_select.disable()
 
     # v0.3.0: bir önceki oturumdan panelde kalan içeriği/durumu temizle.
@@ -145,6 +169,7 @@ async def on_stop():
         summary_area.set_content(final_summary)
     start_button.enable()
     device_select.enable()
+    language_select.enable()
     llm_profile_select.enable()
     if assistant.last_stop_drained and assistant.last_stop_finalized:
         ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
@@ -650,6 +675,12 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
         with ui.row().classes("items-center gap-3"):
             device_select = ui.select(
                 _build_device_options(), value=None, on_change=on_device_change
+            ).props("dark outlined dense").classes("min-w-[220px]")
+
+            language_select = ui.select(
+                _build_language_options(),
+                value=assistant.get_source_language_key(),
+                on_change=on_language_change,
             ).props("dark outlined dense").classes("min-w-[220px]")
 
             llm_profile_select = ui.select(

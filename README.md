@@ -23,7 +23,7 @@
 
 ---
 
-Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı doğrudan **hoparlör çıkışından** (varsayılan çıkış ya da seçtiğin bir çıkış cihazı) dinler; konuşmayı Türkçe metne dönüştürür, oturum sürerken düzenli olarak güncellenen bir **canlı özet** tutar ve oturum bittiğinde **tutanak formatında final özet + tam transkript** bırakır.
+Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı doğrudan **hoparlör çıkışından** (varsayılan çıkış ya da seçtiğin bir çıkış cihazı) dinler; konuşmayı metne dönüştürür (konuşma dilini başlatmadan önce **Türkçe**, **English** veya **Otomatik** olarak seçebilirsin), oturum sürerken düzenli olarak güncellenen bir **canlı özet** tutar ve oturum bittiğinde **tutanak formatında final özet + tam transkript** bırakır. Özetler Türkçe üretilir (konuşma dili seçiminden bağımsız).
 
 Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut AI servisine gönderilmez ve API anahtarı gerekmez. Modeller ilk kullanımda indirildikten sonra temel inference akışı yerel olarak çalışabilir.
 
@@ -75,10 +75,11 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
 - **Ses yakalama:** Windows'un WASAPI loopback özelliğini kullanır. Mikrofonu dinlemek yerine bir çıkış cihazından oynatılan sesi yakalar. Varsayılan seçenek **"Sistem varsayılanı (otomatik)"** Windows'un varsayılan çıkışını kullanır; oturumu başlatmadan önce listeden belirli bir WASAPI loopback çıkış kaynağını da seçebilirsin. Seçilen şey bir *çıkış cihazıdır* — belirli bir uygulamanın sesini ayırmak (uygulama bazlı loopback) henüz desteklenmez.
 - **Konuşma tespiti:** `webrtcvad`, sesi konuşma ve sessizlik sınırlarına göre parçalar; gereksiz sessiz bölümlerin Whisper'a gönderilmesini azaltır.
 - **ASR:** `faster-whisper` + CTranslate2 üzerinde Whisper large-v3-turbo, NVIDIA GPU ile çalışır.
-- **Özetleme:** Ollama üzerinden yerel bir LLM kullanılır. İki profil vardır: **Kaliteli** (`gemma4:e2b`, varsayılan) ve **Hızlı** (`qwen2.5:3b`). Referans makinede Qwen'in özetleri daha hızlı ürettiği gözlendi; iki modelin çıktı ayrıntısı/kalitesi farklı olabilir. Vesper'ın tasarımında özetleme her iki profilde de CPU'da çalışır; böylece GPU belleği Whisper'a kalır.
+- **Konuşma dili (v0.4.0):** Oturumu başlatmadan önce Whisper'ın kaynak (transkripsiyon) dilini seçersin: **Türkçe** (varsayılan), **English** veya **Otomatik**. Bu seçici *yalnızca konuşmanın hangi dilde yazıya geçirileceğini* belirler; **özetler v0.4'te her zaman Türkçe kalır** — bu bilinçli bir tasarım kararıdır. Yani English seçersen sonuç şudur: İngilizce konuşma → İngilizce transkript → Türkçe özet. Bu bir hata değildir; Vesper'da çeviri veya altyazı çevirisi özelliği yoktur. **Otomatik**, Whisper'ın yerel dil algılamasını kullanır ve Türkçe/İngilizce karışık içerik için kullanışlıdır; algılama kısa, gürültülü veya dilin sık değiştiği konuşmalarda kusurlu olabilir ve Vesper algılanan dili parça başına kaydetmez. Seçim oturum başında sabitlenir. Dil işleme tamamen yerel çalışır; bulut dil API'si kullanılmaz.
+- **Özetleme:** Ollama üzerinden yerel bir LLM kullanılır. İki profil vardır: **Kaliteli** (`gemma4:e2b`, varsayılan) ve **Hızlı** (`qwen2.5:3b`). Referans makinede Qwen'in özetleri daha hızlı ürettiği gözlendi; iki modelin çıktı ayrıntısı/kalitesi farklı olabilir. Vesper'ın tasarımında özetleme her iki profilde de CPU'da çalışır; böylece GPU belleği Whisper'a kalır. Özet çıktısı v0.4'te her zaman Türkçedir; seçtiğin konuşma dili özet dilini değiştirmez.
 - **Canlı özet:** Belirlenen aralıklarla o ana kadarki transkript yeniden özetlenir.
-- **Kalıcılık (v0.2.0):** Her transkript parçası ve her özet, üretildiği anda `data/vesper.db` (SQLite) içine yazılır — Durdur'a basılmasını beklemez. Uygulama beklenmedik şekilde kapanırsa (çökme, güç kesintisi, `kill`), o ana kadar transkript edilmiş olan her şey diskte kalır ve bir sonraki açılışta Geçmiş'te "yarıda kesildi" olarak görünür. `outputs/*.md` dosyaları hâlâ üretilir ama artık bir dışa aktarımdır — kaynak veri SQLite'tadır. Her özet, hangi modelle üretildiği bilgisiyle birlikte kaydedilir.
-- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir. "Oturum" (canlı görünüm) ve "Geçmiş" (kayıtlı oturumlar) olmak üzere iki sekme vardır. "Oturum" sekmesinde ses kaynağı ve LLM profili seçicileri bulunur; ikisi de oturum sürerken kilitlidir.
+- **Kalıcılık (v0.2.0):** Her transkript parçası ve her özet, üretildiği anda `data/vesper.db` (SQLite) içine yazılır — Durdur'a basılmasını beklemez. Uygulama beklenmedik şekilde kapanırsa (çökme, güç kesintisi, `kill`), o ana kadar transkript edilmiş olan her şey diskte kalır ve bir sonraki açılışta Geçmiş'te "yarıda kesildi" olarak görünür. `outputs/*.md` dosyaları hâlâ üretilir ama artık bir dışa aktarımdır — kaynak veri SQLite'tadır. Her özet, hangi modelle üretildiği bilgisiyle birlikte kaydedilir. Oturumun konuşma (kaynak) dili seçimi de oturum ve transkript parçası kayıtlarıyla birlikte saklanır (Türkçe → `tr`, English → `en`, Otomatik → boş/NULL; Otomatik'te boş değer "otomatik mod seçildi" demektir, gerçekte algılanan dilin kaydedildiği anlamına gelmez).
+- **Arayüz:** NiceGUI tabanlı yerel web arayüzü tarayıcıdan veya aynı yerel ağdaki başka bir cihazdan görüntülenebilir. "Oturum" (canlı görünüm) ve "Geçmiş" (kayıtlı oturumlar) olmak üzere iki sekme vardır. "Oturum" sekmesinde ses kaynağı, konuşma dili ve LLM profili seçicileri bulunur; üçü de oturum sürerken kilitlidir.
 
 ## Gereksinimler
 
@@ -418,12 +419,13 @@ http://192.168.1.23:8080
 
 ### Kullanım
 
-**Başlatmadan önce (isteğe bağlı):** Başlat düğmesinin yanındaki iki seçiciyi kullanabilirsin:
+**Başlatmadan önce (isteğe bağlı):** Başlat düğmesinin yanındaki üç seçiciyi kullanabilirsin (soldan sağa sıra: **Ses cihazı → Konuşma dili → LLM profili → Başlat → Durdur**):
 
 - **Ses cihazı:** Varsayılan **"Sistem varsayılanı (otomatik)"** önceki davranışı korur: Windows'un varsayılan çıkış cihazının sesi yakalanır. İstersen listeden belirli bir WASAPI loopback çıkış kaynağını seçebilirsin. Belirli bir uygulamanın sesini ayırmak (uygulama bazlı loopback) henüz desteklenmez. Cihaz listesi uygulama açıkken canlı olarak güncellenmeyebilir; kullanacağın cihazı `python ui.py`'yi başlatmadan önce bağla.
+- **Konuşma dili:** **Türkçe** varsayılandır (`config.py`'deki `WHISPER_LANGUAGE`). Konuşma Türkçeyse Türkçe, İngilizceyse English, Türkçe/İngilizce karışıksa Otomatik'i seç. Bu seçici yalnızca transkripsiyon dilini belirler; özet her zaman Türkçedir (English seçersen: İngilizce transkript, Türkçe özet — beklenen davranıştır). Konuşmanın gerçek diliyle uyuşmayan bir dil seçersen transkript bozuk çıkabilir.
 - **LLM profili:** **Kaliteli (gemma4:e2b)** varsayılandır. **Hızlı (qwen2.5:3b)** için önce `ollama pull qwen2.5:3b` gerekir (bkz. Kurulum, adım 4).
 
-Oturum sürerken iki seçici de kilitlidir; **Durdur ve Final Özet Çıkar**'dan sonra tekrar açılır. Oturum sırasında kaynak değiştirilemez; Vesper başka bir cihaza kendiliğinden geçmez ve kaynak koparsa yeniden bağlanmaz.
+Oturum sürerken üç seçici de kilitlidir (konuşma dili oturum başında sabitlenir; oturumlar arasında değiştirilebilir); **Durdur ve Final Özet Çıkar**'dan sonra tekrar açılır. Oturum sırasında kaynak değiştirilemez; Vesper başka bir cihaza kendiliğinden geçmez ve kaynak koparsa yeniden bağlanmaz.
 
 1. **Başlat** düğmesine bas. Yeni oturum otomatik olarak `Webinar — YYYY-MM-DD HH:MM` gibi bir başlıkla kaydedilmeye başlar (SQLite'a).
 2. Webinarı, canlı dersi veya toplantıyı oynat.
@@ -446,7 +448,7 @@ Arayüzsüz kullanım için:
 python main.py
 ```
 
-Ctrl+C ile durdurulduğunda final özet oluşturulur ve aynı şekilde kalıcı olarak kaydedilir. Bu modda ses kaynağı ve LLM profili seçilemez; varsayılanlar (Sistem varsayılanı ve Kaliteli profil) kullanılır.
+Ctrl+C ile durdurulduğunda final özet oluşturulur ve aynı şekilde kalıcı olarak kaydedilir. Bu modda ses kaynağı, konuşma dili ve LLM profili seçilemez; varsayılanlar (Sistem varsayılanı, `config.py`'deki `WHISPER_LANGUAGE` — varsayılan yapılandırmada Türkçe — ve Kaliteli profil) kullanılır.
 
 ### Örnek çıktı
 
@@ -481,7 +483,8 @@ Vesper'ın çalışma ayarları `config.py` içerisindedir.
 
 | Ayar | Varsayılan | Açıklama |
 |---|---|---|
-| `WHISPER_LANGUAGE` | `"tr"` | Türkçe için dili sabitler. Karışık TR/EN içerikte `None` kullanılabilir |
+| `WHISPER_LANGUAGE` | `"tr"` | Açılışta seçili gelen (başlangıç/varsayılan) konuşma dili. `"tr"` → Türkçe, `"en"` → English, `None` → Otomatik. Geçersiz/desteklenmeyen değerler uyarıyla Türkçe'ye döner |
+| `SOURCE_LANGUAGES` | `tr` → Türkçe, `en` → English, `auto` → Otomatik | Arayüzdeki konuşma dili seçenekleri. Resmi seçenekler yalnızca `tr`, `en` ve `auto`'dur; yalnızca görünen etiketler ve sıra değiştirilebilir. Geçersiz bir tablo uyarıyla yerleşik varsayılana döner |
 | `WHISPER_COMPUTE_TYPE` | `"float16"` | GPU inference hassasiyeti / bellek dengesi |
 | `WHISPER_ALLOW_CPU_FALLBACK` | `True` | GPU başlatılamazsa CPU'ya geçilmesine izin verir |
 | `WHISPER_GPU_INDEX` | `0` | Kullanılacak CUDA cihazı |
@@ -497,21 +500,21 @@ Vesper'ın çalışma ayarları `config.py` içerisindedir.
 
 > v0.2.0'dan yükseltiyorsan ve `OLLAMA_MODEL`'i değiştirmiştiysen: seçtiğin modeli artık `LLM_PROFILES` içindeki ilgili profile yaz.
 
-### Dil algılama
+### Konuşma dili
 
-Ağırlıklı Türkçe içerik:
+Arayüzdeki **Konuşma dili** seçicisi uygulama açılırken `WHISPER_LANGUAGE` değeriyle başlar; oturumdan önce arayüzden değiştirilebilir. Varsayılan (ağırlıklı Türkçe içerik):
 
 ```python
 WHISPER_LANGUAGE = "tr"
 ```
 
-Türkçe ve İngilizcenin karıştığı oturumlar:
+Açılışta **Otomatik** seçili gelsin istersen (Türkçe ve İngilizcenin karıştığı oturumlar):
 
 ```python
 WHISPER_LANGUAGE = None
 ```
 
-İkinci seçenek otomatik dil algılama yaptığı için bir miktar ek işlem gerektirebilir.
+`"en"` değeri açılışta English'i seçili getirir. Resmi seçenekler yalnızca `"tr"`, `"en"` ve `None` (Otomatik)'tir; başka bir değer (ör. `"de"`) yazarsan logda bir uyarı görürsün ve Vesper güvenli şekilde Türkçe'ye döner. Otomatik, dil algılama yaptığı için bir miktar ek işlem gerektirebilir ve kısa, gürültülü veya karma konuşmalarda kusurlu olabilir.
 
 ### GPU compute type
 
@@ -544,6 +547,8 @@ Local Markdown Output
 Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthropic gibi harici bir AI API'sine göndermez. Bir LLM profili seçilirken yapılan model kontrolü yalnızca yerel Ollama servisine sorar; model indirmez ve bulut tabanlı bir model API'si çağırmaz.
 
 **Kalıcı depolama (v0.2.0):** Transkript parçaları ve özetler artık oturum sırasında `data/vesper.db` (yerel bir SQLite dosyası) içine yazılır; bu, `outputs/` altındaki Markdown dosyalarıyla aynı diskte, tamamen yerel bir depodur — hiçbir ağ isteği içermez. Geçmişi tamamen temizlemek istersen uygulama kapalıyken `data/vesper.db` dosyasını silmen yeterlidir; Vesper bir sonraki açılışta veritabanını sıfırdan oluşturur.
+
+**Dil seçimi (v0.4.0):** Otomatik dil algılama dahil tüm dil işleme yerel Whisper içinde gerçekleşir; bulut dil/çeviri API'si kullanılmaz ve dil tespiti için ağ isteği yapılmaz. Dil bilgisi olarak veritabanına yalnızca seçilen yapılandırma yazılır: Türkçe → `tr`, English → `en`, Otomatik → boş (NULL). Otomatik için boş değer "otomatik algılama modu seçildi" anlamına gelir; Vesper'ın gerçekte algılanan dili kaydettiği anlamına gelmez.
 
 İlk kurulum sırasında:
 
@@ -787,6 +792,22 @@ Profil seçerken kırmızı bir uyarı görüyor ve seçici önceki profile dön
 
 Oturum sırasında Ollama yanıt vermezse canlı özet güncellenemez ve arayüzde bir uyarı görünür. Bu sırada transkripsiyon devam eder ve son başarılı canlı özet ekranda kalır. Vesper sonraki canlı özet döngülerinde yeniden dener; Ollama tekrar çalışır hâle geldiğinde kendiliğinden toparlanır. Final özet istendiği anda Ollama erişilemezse final özet oluşturulamayabilir ve oturum temiz bir "tamamlandı" olarak gösterilmez; oturum sırasında yazılan transkript yine de `data/vesper.db` içinde kalır.
 
+### Transkripsiyon yanlış dilde ya da anlamsız çıkıyor
+
+Başlatmadan önce **Konuşma dili** seçicisinden konuşmanın gerçek dilini (Türkçe / English) seç. Seçilen dil Whisper'a sabit olarak verilir; konuşmayla uyuşmayan bir dil seçilirse transkript bozuk çıkabilir. Seçici oturum sürerken kilitlidir; dili değiştirmek için oturumu durdur, dili seç ve yeni bir oturum başlat.
+
+### Türkçe ve İngilizce karışık konuşuluyor
+
+**Otomatik** seçeneğini kullan. Whisper dili yerel olarak kendisi algılar.
+
+### Otomatik modda dil algılama kusurlu
+
+Kısa, gürültülü veya bir cümle içinde dilin değiştiği konuşmalarda algılama kusurlu olabilir; bu durumda ilgili bölümler yanlış yazılabilir. Oturumun tamamı tek dildeyse o dili elle seçmek daha güvenilirdir. Vesper algılanan dili parça başına kaydetmez.
+
+### İngilizce seçtim ama özet Türkçe
+
+Bu v0.4'ün bilinçli davranışıdır, hata değildir. Konuşma dili seçici *transkripsiyon* dilini belirler, özet çıktı dilini değil: İngilizce konuşma → İngilizce transkript → Türkçe özet.
+
 ### WASAPI loopback cihazı bulunamıyor
 
 Önce:
@@ -863,7 +884,7 @@ Uzun vadede hiyerarşik/chunked özetleme daha ölçeklenebilir bir çözümdür
 ```text
 Vesper/
 ├── main.py             # İnce CLI giriş noktası (motoru vesper.engine'den başlatır)
-├── ui.py               # NiceGUI web arayüzü (Oturum + Geçmiş sekmeleri)
+├── ui.py               # NiceGUI web arayüzü (Oturum + Geçmiş sekmeleri; ses/dil/LLM seçicileri)
 ├── gpu_check.py        # CUDA / CTranslate2 tanı aracı (bağımsız)
 ├── test_audio.py       # WASAPI ses testi (bağımsız)
 ├── requirements.txt
@@ -873,10 +894,11 @@ Vesper/
 │
 ├── vesper/                 # Uygulama motoru — UI'dan bağımsız çalışabilir paket
 │   ├── engine.py           # WebinarAssistant: capture→transcribe→summarize akışı,
-│   │                       # güvenli kapanış / queue-drain garantisi
+│   │                       # güvenli kapanış / queue-drain garantisi; oturum başında sabitlenen konuşma dili
 │   ├── config.py           # Merkezi yapılandırma
+│   ├── language.py         # Konuşma (kaynak) dili: küçük seçenek/doğrulama modülü (tr / en / auto)
 │   ├── audio_capture.py    # WASAPI loopback (cihaz seçimi) + WebRTC VAD
-│   ├── transcriber.py      # faster-whisper / CUDA / fallback
+│   ├── transcriber.py      # faster-whisper / CUDA / fallback (oturum başına konuşma dili)
 │   ├── summarizer.py       # Ollama istemcisi + LLM profilleri (Hızlı / Kaliteli)
 │   ├── session.py          # Oturum / Segment / Özet veri modelleri
 │   ├── storage.py          # SQLite bağlantı yönetimi + şema
@@ -887,7 +909,9 @@ Vesper/
 │   ├── test_lifecycle_integration.py
 │   ├── test_audio_capture_device_selection.py
 │   ├── test_audio_capture_runtime_failure.py
-│   └── test_summarizer_profiles.py
+│   ├── test_summarizer_profiles.py
+│   ├── test_language_selection.py
+│   └── test_transcriber_language.py
 │
 └── assets/
    ├── Vesper.jpg
@@ -900,7 +924,7 @@ Vesper/
 
 Vesper şu anda erken aşamada bir açık kaynak projesidir.
 
-Mevcut sürüm (v0.3.0) gerçek bir Windows 11 makinede:
+Mevcut sürüm (v0.4.0) gerçek bir Windows 11 makinede:
 
 ```text
 Windows 11
@@ -912,7 +936,7 @@ CUDA Toolkit 12.8
 cuDNN 9
 ```
 
-ile Türkçe içerikler üzerinde test edilmiştir. Bu testler varsayılan WASAPI loopback çıkışını, bir Bluetooth hoparlör çıkışını ve her iki LLM profilini (Hızlı ve Kaliteli) kapsamıştır.
+ile Türkçe, English ve karma Türkçe/İngilizce (Otomatik) içerikler üzerinde test edilmiştir. Önceki sürümün (v0.3.0) testleri ayrıca varsayılan WASAPI loopback çıkışını, bir Bluetooth hoparlör çıkışını ve her iki LLM profilini (Hızlı ve Kaliteli) kapsamıştır.
 
 Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına gelmez. Farklı NVIDIA GPU'lar, Windows sürümleri ve ses cihazlarından gelen hata raporları özellikle değerlidir.
 
@@ -920,7 +944,7 @@ Bu, diğer donanım ve sürücü kombinasyonlarının doğrulandığı anlamına
 
 ## Yol haritası
 
-Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Son sürüm **v0.3.0 — "Vesper listens"** (ses kaynağı seçimi ve LLM hız/kalite profilleri) tamamlandı ve yayınlandı; önceki sürüm **v0.2.0 — "Vesper remembers"**.
+Vesper, v0.1.0'dan v1.0.0'a doğru sürüm sürüm genişliyor. Son sürüm **v0.4.0 — "Vesper speaks"** (konuşma/kaynak dili seçici) tamamlandı ve yayınlandı; önceki sürüm **v0.3.0 — "Vesper listens"** (ses kaynağı seçimi ve LLM hız/kalite profilleri).
 
 Detaylı, sürüm sürüm yol haritası için bkz. [ROADMAP.md](ROADMAP.md).
 
@@ -943,6 +967,7 @@ faster-whisper:
 CTranslate2:
 Vesper commit/version:
 Selected audio source:
+Selected source language:
 Selected LLM profile / Ollama model:
 ```
 

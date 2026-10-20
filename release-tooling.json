@@ -1,0 +1,120 @@
+{
+  "format": "vesper-release-tooling-v1",
+  "tooling_version": "0.5.0-hardening.1",
+  "release_signoff": "HOLD",
+  "production_migration": "HOLD",
+  "launcher": {
+    "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\acceptance\\acceptance_launcher.py",
+    "sha256": "6a40b61d54f239bb7d7ebadecbb367c7b71de20b92d22a4f685c6bdf7f18f181",
+    "test_path_override": "VESPER_ACCEPTANCE_LAUNCHER",
+    "terminal_format": "vesper-acceptance-terminal-v1",
+    "cli_location_guard": "The CLI remains restricted to the approved absolute location; an identical relocated copy is supported for helper tests only."
+  },
+  "runtime": {
+    "executable": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\envs\\vesper-py313\\python.exe",
+    "prefix": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\envs\\vesper-py313",
+    "python": "3.13.14",
+    "sqlite": "3.53.4",
+    "sqlite_dll": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\envs\\vesper-py313\\Library\\bin\\sqlite3.dll",
+    "sqlite_source_id": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc"
+  },
+  "provenance": {
+    "bundle_root": "C:\\Users\\-HSYN-\\vesper-runtime-plan",
+    "verification_status": "PASS",
+    "conda_packages": 49,
+    "pip_packages": 45,
+    "artifact_hashes_verified_at_installation": 94,
+    "ownership_overlaps": 0,
+    "conda_metadata_exception": "PASS_WITH_NARROW_APPROVED_PYTHON_PIP_DUPLICATE",
+    "metadata_formats": {
+      "dist-info": 74,
+      "egg-info": 1
+    },
+    "evidence_files": [
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\artifacts-win64-cp313.json",
+        "sha256": "fa944bc2e935c8634bfa39616d18d0a3993a7b953323d39397c9ec7977eb33cd"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\conda-win64.explicit.txt",
+        "sha256": "1b9d80d02f064c2c6721259b1d818f8cc1a69a1948fcd20f5037c627ddaec377"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\pip-win64.lock.txt",
+        "sha256": "1ddd4328661f38978391e503a6668356e5313e20688bc9bc8a55f4c92fff7e36"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\conda-seed-win-64.txt",
+        "sha256": "81b9ce24774158102a68d8e454bbe4ac6ead5277ecf8fcefb1787ca47a6c0b0e"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\conda-packages\\win-64\\repodata.json",
+        "sha256": "ea16fb826bed810c36814444d00fb73771ca0da02a221eb628fdd330ef360923"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\conda-packages\\noarch\\repodata.json",
+        "sha256": "28527beea31c4a2e6282a63a741e5a65eb0f6d660c5bebde32ff100bca03eae3"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\install_verified_runtime.py",
+        "sha256": "e8fe982f9369a2ff1e73330390143b736b37f2abf9747f193fe807152c75de9d"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\verify_runtime_ownership.py",
+        "sha256": "ba2019772345e6dcd7692f7ac92e880af94cdc5d00a7b7502d375e3799f7dc80"
+      },
+      {
+        "path": "C:\\Users\\-HSYN-\\vesper-runtime-plan\\final-ownership-verification-audit\\verification-result.json",
+        "sha256": "eedf501c76fe5150c701d8a884ef75c163330878adf2ddb5ab6614467ce62334"
+      }
+    ]
+  },
+  "tool_dependencies": {
+    "nicegui": "3.16.0",
+    "uvicorn": "0.52.4",
+    "starlette": "1.6.0",
+    "fastapi": "0.141.1",
+    "huggingface-hub": "1.29.0"
+  },
+  "application_native_dependencies": {
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.8.2",
+    "PyAudioWPatch": "0.2.12.8",
+    "cuda": "system Toolkit 12.8",
+    "cudnn": "system 9",
+    "ollama_policy": "CPU; direct execution evidence remains deferred"
+  },
+  "provisioning": [
+    "This is auxiliary release evidence, not a package or installer. requirements.txt alone does not reproduce this runtime.",
+    "Obtain the separately approved 94-artifact bundle and external verification scripts. Verify the listed evidence hashes, all artifact hashes and channel repodata before any separately authorized installation.",
+    "Preserve corrected Python/Tk frozen-channel metadata; the only approved installed metadata exception is two identical unconstrained pip dependencies on Python 3.13.14.",
+    "Use an isolated prefix outside repository and base. Conda owns 49 packages; pip owns 45 local wheels. Follow the reviewed installer and ownership verifier; no base or CUDA modifications and no NVIDIA pip CUDA packages.",
+    "The recorded installed prefix already exists and must not be recreated by this batch. A new machine/path requires a separately reviewed provisioning plan and path-guard updates.",
+    "Provision the exact launcher bytes at launcher.path. Helper tests may use VESPER_ACCEPTANCE_LAUNCHER pointing to an identical hash-verified copy; missing or altered tooling fails test import.",
+    "Use the recorded python executable with -B and explicit safe test modules. Launcher run requires separate manual acceptance authorization; never default to an existing production database."
+  ],
+  "limitations": [
+    "This manifest identifies required external artifacts but does not embed or redistribute them. A checkout alone is insufficient.",
+    "Installation provenance is historical verification evidence; this batch does not reinstall or re-audit every environment file.",
+    "No new real Windows startup/shutdown acceptance is claimed after terminal-reporting changes."
+  ],
+  "safe_regression": {
+    "date": "2026-10-20",
+    "modules": {
+      "tests.test_schema_migration": 224,
+      "tests.test_persistence": 26,
+      "tests.test_artifacts": 40,
+      "tests.test_artifact_lifecycle": 24,
+      "tests.test_artifact_export": 13,
+      "tests.test_artifact_ui": 18,
+      "tests.test_ui_startup": 27,
+      "tests.test_acceptance_launcher": 58
+    },
+    "pass": 430,
+    "fail": 0,
+    "error": 0,
+    "skip": 0,
+    "duration_seconds": 70.344,
+    "scope": "Explicit disposable-resource modules only; no real application, audio, GPU or Ollama generation was launched. No release sign-off implied."
+  }
+}

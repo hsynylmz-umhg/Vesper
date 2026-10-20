@@ -77,7 +77,14 @@ def _preflight_diagnostics(registered_dirs: List[str]) -> None:
 
     log.info("CUDA_PATH = %s", os.environ.get("CUDA_PATH") or "(tanımlı değil!)")
     for mod in ("nvidia.cublas", "nvidia.cudnn"):
-        if importlib.util.find_spec(mod) is not None:
+        try:
+            spec = importlib.util.find_spec(mod)
+        except ModuleNotFoundError as exc:
+            if exc.name != "nvidia":
+                raise
+            log.debug("pip NVIDIA üst paketi kurulu değil: %s", mod)
+            spec = None
+        if spec is not None:
             log.warning("pip paketi '%s' hâlâ kurulu. Çakışma yaratabilir.", mod)
 
     for name in CUDA_DLLS:

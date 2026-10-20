@@ -22,7 +22,7 @@ mimari kurallar için `CLAUDE.md`'ye bakılmalıdır.
 | v0.2.0 | Vesper remembers | Yayında |
 | v0.3.0 | Vesper listens | Yayında |
 | v0.4.0 | Vesper speaks | Yayında |
-| v0.5.0 | Vesper understands | Planlandı |
+| v0.5.0 | Vesper understands | Üzerinde çalışılıyor |
 | v0.6.0 | Vesper attends | Planlandı |
 | v0.7.0 | Vesper sees | Planlandı |
 | v0.8.0 | Vesper connects | Planlandı |
@@ -50,8 +50,23 @@ mimari kurallar için `CLAUDE.md`'ye bakılmalıdır.
 
 ## v0.5.0 — Vesper understands
 
-- [ ] Chat / link yakalama
-- [ ] `artifacts` tablosu (transkript dışı yakalanan veri: link, not, dosya) — v0.8'in provenance/export özellikleri bu şemaya dayanacak
+- [x] A: Şema v2, varsayılan göç REDDİ, doğrulanmış yedek, işlem/bağlantı güvenliği ve dar SQL parmak izi.
+- [x] B: `artifacts` modeli ve oturum sahipliğine bağlı elle link/not API'leri.
+- [x] C: NiceGUI Meeting Materials, Geçmiş görüntüleme/silme ve otomatik Markdown anlık görüntüsü.
+- [ ] Sürüm kabulü ve bağımsız son inceleme — **HOLD**. Uygulamanın yazılmış olması sürümün yayınlandığı anlamına gelmez.
+- **Üretim veritabanı göçü: HOLD.** Şema v1 varsayılan açılışta reddedilir;
+  yükseltme için ayrı açık onay gerekir. Bu geliştirme üretim göçüne izin vermez.
+- Kesin yalıtılmış referans: Windows 11, Python 3.13.14 / SQLite 3.53.4;
+  araç/ortam kanıtı `release-tooling.json`. v0.4.0 son yayınlanan sürümdür.
+- Gerçek kabulte gözlendi: CUDA Whisper, WASAPI, Qwen final özet, elle not/link,
+  Geçmiş ve otomatik Markdown. Terminal raporlama düzeltmesinden sonra yeni
+  gerçek açılış/kapanış doğrulaması yapılmadı; eski deney kayıtları korunur.
+- Kullanıcı tarafından ertelenen manuel kriterler: A/B oturum yalıtımı,
+  materyal silme onayı/iptali, yeniden başlatmada kalıcılık, 240 saniyelik
+  canlı özet ve Ollama'nın CPU yürütmesine doğrudan kanıt. Geçti sayılmazlar.
+- Kapsam yalnızca **elle link ve metin notu**; e-posta alıntısı da elle nottur.
+  Otomatik Teams/Zoom/Meet/Outlook/Gmail sohbet yakalama, dosya yakalama, OCR
+  veya sürekli pano izleme uygulanmadı. Şema v0.8 provenance için korunur.
 
 ## v0.6.0 — Vesper attends
 

@@ -24,6 +24,13 @@ STATUS_INTERRUPTED = "interrupted"  # temiz kapanmadı: uygulama/Python çöktü
 SUMMARY_LIVE = "live"
 SUMMARY_FINAL = "final"
 
+# Elle yakalanan ek bilgi türleri ve yakalama yöntemleri.
+ARTIFACT_LINK = "link"
+ARTIFACT_NOTE = "note"
+CAPTURE_MANUAL = "manual"
+ARTIFACT_KINDS = (ARTIFACT_LINK, ARTIFACT_NOTE)
+ARTIFACT_CAPTURE_METHODS = (CAPTURE_MANUAL,)
+
 
 @dataclass
 class Session:
@@ -98,5 +105,30 @@ class Summary:
             kind=row["kind"],
             content=row["content"],
             model=row["model"],
+            created_at=row["created_at"],
+        )
+
+
+@dataclass
+class Artifact:
+    """Şema v2 ile uyumlu, tek bir oturuma ait elle yakalanmış ek bilgi."""
+
+    id: int
+    session_id: str
+    kind: str
+    content: str
+    capture_method: str
+    source_segment_id: Optional[int]
+    created_at: str
+
+    @staticmethod
+    def from_row(row) -> "Artifact":
+        return Artifact(
+            id=row["id"],
+            session_id=row["session_id"],
+            kind=row["kind"],
+            content=row["content"],
+            capture_method=row["capture_method"],
+            source_segment_id=row["source_segment_id"],
             created_at=row["created_at"],
         )

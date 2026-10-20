@@ -15,13 +15,54 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/python-3.13%20validated-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/GPU-NVIDIA%20CUDA%2012-76B900?logo=nvidia&logoColor=white" alt="CUDA 12">
   <img src="https://img.shields.io/badge/local--first-no%20cloud%20API-181717" alt="Local first">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT">
 </p>
 
 ---
+
+**v0.5 geliştirme / sürüm kabulü HOLD.** Son yayınlanan sürüm v0.4.0'dır.
+v0.5'te elle link/not materyalleri, şema v2 ve güvenli göç, Geçmiş materyalleri
+ve otomatik Markdown uygulanmıştır; bağımsız son onay beklenir.
+**Üretim veritabanı göçü HOLD**; aşağıdaki genel başlatma örnekleri mevcut
+üretim DB'sine karşı bu geliştirme sürümünü çalıştırma izni değildir.
+
+### v0.5 materyaller, ortam ve kabul sınırı
+
+- Meeting Materials yalnızca etkin toplantıya **elle Link veya Note** ekler.
+  HTTP/HTTPS link doğrulanır, not biçimi korunur. E-posta alıntıları elle nottur;
+  otomatik Teams/Zoom/Meet/Outlook/Gmail sohbeti, dosya/OCR veya pano izleme yoktur.
+- Geçmiş seçili oturumun materyallerini gösterir ve onayla siler; Geçmiş'ten
+  yeni materyal eklenmez. Oturum/segment sahipliği SQLite tarafından da korunur.
+- Durdur final özetini kaydedip otomatik `webinar_YYYYMMDD_HHMMSS.md` üretir;
+  manuel indirme düğmesi yoktur. Özet, transkript ve materyal türü/içeriği/zamanı
+  SQLite'tan alınır. Materyal metni etkin HTML/Markdown olarak yorumlanmaz.
+  Dosya **anlık görüntüdür**: sonraki Geçmiş silme/yeniden adlandırma işlemleri
+  eski dosyayı değiştirmez. Kabul başlatıcısı çıktıyı deneyin `runs/<id>/outputs`
+  klasörüne yönlendirir; repository `outputs/` klasörüne değil. Mutlak yol konsola yazılır.
+- Şema v2 kullanılır. `Database(..., allow_migration=False)` varsayılandır;
+  v1 otomatik yükseltilmez. Açık `allow_migration=True` ayrı yetkili yükseltme
+  adımının API'sidir, bu doküman üretim göçü onayı değildir. Yetkili göç,
+  kilit altında doğrulama ve tarihsel veri varsa doğrulanmış yedek gerektirir.
+- Destek hedefi Windows x64 / CPython 3.13; **kesin doğrulanmış ortam Python
+  3.13.14 / SQLite 3.53.4 / NiceGUI 3.16.0**'dır. Önceki 3.10–3.12/3.11
+  bilgileri tarihsel referanstır; başka runtime uyumluluğu varsayılmaz.
+  Sistem CUDA 12.8 + cuDNN 9, Whisper GPU ve Ollama CPU politikası korunur.
+- [release-tooling.json](release-tooling.json), dış başlatıcı SHA-256'sını,
+  konumunu, 49 Conda + 45 pip paketli donmuş ortamın artifact/kurulum kanıtlarını
+  ve ayrı onaylı provisioning adımlarını içerir. `requirements.txt` yalnızca
+  genel alt sınırlardır; tek başına bu runtime'ı yeniden üretmez. Eksik veya
+  hash'i değişmiş dış başlatıcı testleri başarısız olur. Aynı baytlı kopya için
+  `VESPER_ACCEPTANCE_LAUNCHER` test yolu kullanılabilir; CLI konum koruması sürer.
+- Yeni başlatıcıda `shutdown-snapshot.json` yalnızca ara kanıt,
+  `terminal.json` tek yetkili sonuçtur. Ctrl+C ancak finalizasyon, işçiler,
+  temizlik, ASGI ve server kapanışı kanıtlanırsa PASS olabilir. Tarihsel iki
+  kabul deneyinin çelişkili kayıtları değiştirilmez; yeni gerçek kapanış henüz denenmedi.
+- **Ertelenmiş manuel kriterler:** A/B oturum yalıtımı; materyal silme onayı/iptali;
+  yeniden başlatmada kalıcılık; 240 saniyelik canlı özet; doğrudan Ollama CPU
+  yürütme kanıtı. Bunlar geçti sayılmaz; sürüm kabulü HOLD kalır.
 
 Vesper, bilgisayarında oynatılan webinarı, canlı dersi veya toplantıyı doğrudan **hoparlör çıkışından** (varsayılan çıkış ya da seçtiğin bir çıkış cihazı) dinler; konuşmayı metne dönüştürür (konuşma dilini başlatmadan önce **Türkçe**, **English** veya **Otomatik** olarak seçebilirsin), oturum sürerken düzenli olarak güncellenen bir **canlı özet** tutar ve oturum bittiğinde **tutanak formatında final özet + tam transkript** bırakır. Özetler Türkçe üretilir (konuşma dili seçiminden bağımsız).
 
@@ -89,7 +130,7 @@ Transkripsiyon ve özetleme kendi makinen üzerinde gerçekleşir. Ses bir bulut
 | GPU | CUDA destekli NVIDIA GPU | RTX 4050 Laptop GPU, 6 GB VRAM |
 | Hibrit grafik | Desteklenebilir | AMD iGPU + NVIDIA |
 | RAM | 12 GB+ | 16 GB |
-| Python | 3.10 – 3.12 | Python 3.11 |
+| Python / SQLite | Windows x64 CPython 3.13 hedefi | Python 3.13.14 / SQLite 3.53.4 (yalıtılmış referans) |
 | CUDA | CUDA 12 ailesi | CUDA Toolkit 12.8 |
 | cuDNN | cuDNN 9 / CUDA 12 | cuDNN 9 |
 | Disk | Modeller + CUDA için birkaç GB boş alan | — |
@@ -305,6 +346,8 @@ git clone https://github.com/hsynylmz-umhg/Vesper.git
 cd Vesper
 ```
 
+Aşağıdaki venv/pip örnekleri genel kurulum bilgisidir; v0.5 referans ortamının yeniden üretimi değildir. v0.5 için önce `release-tooling.json` kanıtları ve ayrı kurulum onayı gerekir. Anaconda base değiştirilmez.
+
 Ayrı bir Python ortamı oluşturmak önerilir:
 
 ```powershell
@@ -327,13 +370,12 @@ pip install -r requirements.txt
 
 > Anaconda/Miniconda kullanıyorsan `base` ortamına kurmak yerine ayrı bir environment oluşturmak DLL/NumPy çakışmalarını önlemeye yardımcı olabilir.
 
-Örneğin:
-
-```powershell
-conda create -n vesper python=3.11
-conda activate vesper
-pip install -r requirements.txt
-```
+v0.5 için doğrulanmış yalıtılmış ortam Python **3.13.14 / SQLite 3.53.4**
+kullanır. Conda kurulumu, `release-tooling.json` içinde tanımlanan onaylı
+yerel artifact paketi ve doğrulayıcılarla ayrı izin altında yapılır.
+Yalnızca Python sürümü seçmek veya `requirements.txt` kurmak aynı SQLite
+DLL'ini ve doğrulanmış ortamı sağlamaz. Eski Python 3.11 kurulum örnekleri
+v0.4 için tarihsel bilgidir; v0.5 kurulum önerisi değildir.
 
 ---
 
@@ -546,7 +588,7 @@ Local Markdown Output
 
 Vesper'ın normal inference akışı sesi veya transkripti OpenAI, Google, Anthropic gibi harici bir AI API'sine göndermez. Bir LLM profili seçilirken yapılan model kontrolü yalnızca yerel Ollama servisine sorar; model indirmez ve bulut tabanlı bir model API'si çağırmaz.
 
-**Kalıcı depolama (v0.2.0):** Transkript parçaları ve özetler artık oturum sırasında `data/vesper.db` (yerel bir SQLite dosyası) içine yazılır; bu, `outputs/` altındaki Markdown dosyalarıyla aynı diskte, tamamen yerel bir depodur — hiçbir ağ isteği içermez. Geçmişi tamamen temizlemek istersen uygulama kapalıyken `data/vesper.db` dosyasını silmen yeterlidir; Vesper bir sonraki açılışta veritabanını sıfırdan oluşturur.
+**Kalıcı depolama (v0.2.0):** Transkript parçaları ve özetler artık oturum sırasında `data/vesper.db` (yerel bir SQLite dosyası) içine yazılır; bu, `outputs/` altındaki Markdown dosyalarıyla aynı diskte, tamamen yerel bir depodur — hiçbir ağ isteği içermez. Mevcut üretim verisi bu geliştirme akışında silinmez, incelenmez veya göç ettirilmez; veri saklama ve yükseltme işlemleri ayrı açık onay gerektirir. Üretim göçü HOLD durumundadır.
 
 **Dil seçimi (v0.4.0):** Otomatik dil algılama dahil tüm dil işleme yerel Whisper içinde gerçekleşir; bulut dil/çeviri API'si kullanılmaz ve dil tespiti için ağ isteği yapılmaz. Dil bilgisi olarak veritabanına yalnızca seçilen yapılandırma yazılır: Türkçe → `tr`, English → `en`, Otomatik → boş (NULL). Otomatik için boş değer "otomatik algılama modu seçildi" anlamına gelir; Vesper'ın gerçekte algılanan dili kaydettiği anlamına gelmez.
 
@@ -855,13 +897,13 @@ komutunu yeniden çalıştır.
 
 ### Anaconda / NumPy DLL hatası
 
-`_multiarray_umath`, MKL veya benzer DLL sorunlarında temiz bir ortam oluştur:
-
-```powershell
-conda create -n vesper python=3.11
-conda activate vesper
-pip install -r requirements.txt
-```
+`_multiarray_umath`, MKL veya benzer DLL sorunlarında önce kullanılan
+interpreter ve paket sahipliğini doğrula; Anaconda base'i veya doğrulanmış
+ortamın DLL'lerini değiştirme. v0.5 referansı Python **3.13.14 / SQLite
+3.53.4**'tür. Yeni bir yalıtılmış ortam gerekiyorsa `release-tooling.json`
+içindeki artifact/provenance doğrulamasını izleyen ayrı onaylı kurulum
+planı kullan. Python 3.11'e geçmek veya genel pip kurulumu tekrarlamak bu
+referans ortam için doğrulanmış bir onarım değildir.
 
 ### Çok uzun transkriptin sonu özete girmiyor
 
@@ -924,7 +966,7 @@ Vesper/
 
 Vesper şu anda erken aşamada bir açık kaynak projesidir.
 
-Mevcut sürüm (v0.4.0) gerçek bir Windows 11 makinede:
+Önceki yayınlanan sürüm (v0.4.0) için tarihsel Windows 11 doğrulaması:
 
 ```text
 Windows 11

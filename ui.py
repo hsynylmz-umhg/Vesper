@@ -11,13 +11,187 @@ assistant.repository üzerinden konuşur — burada hiç ham SQL yok.
 """
 
 from datetime import datetime
+import asyncio
+from concurrent.futures import Future
+import logging
+import os
+import threading
+from types import SimpleNamespace
 
-from nicegui import ui, run
+from nicegui import app, ui
 
+from vesper import config
 from vesper.engine import WebinarAssistant
-from vesper.session import STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
+from vesper.session import ARTIFACT_LINK, ARTIFACT_NOTE, STATUS_ACTIVE, STATUS_COMPLETED, SUMMARY_FINAL, SUMMARY_LIVE
 
-assistant = WebinarAssistant()
+log = logging.getLogger("ui")
+
+def _configuration_identity():
+    """Yalnızca yol metnini karşılaştırır; veritabanı dosyasına dokunmaz."""
+    return tuple(os.path.normcase(os.path.abspath(os.fspath(value))) for value in (
+        config.DB_PATH, config.OUTPUT_DIR,
+    ))
+
+
+def _lifecycle_snapshot(state):
+    """Dış başlatıcıya kapanışın kanıtlanmış durumunu sunar."""
+    with state.lock:
+        future = state.stop_future
+        worker = state.stop_worker
+        return {
+            "pid": state.pid,
+            "closing": state.closing,
+            "running": state.assistant._running,
+            "stop_pending": future is not None and not future.done(),
+            "stop_worker_alive": worker is not None and worker.is_alive(),
+            "last_stop_drained": state.assistant.last_stop_drained,
+            "last_stop_finalized": state.assistant.last_stop_finalized,
+            "stop_failed": state.stop_failure is not None,
+            "logging_failure_count": len(state.logging_errors),
+        }
+
+
+def _wait_for_stop(state, timeout=None):
+    """Sunucu döndükten sonra işçiyi bekler; süre aşımı başarı sayılmaz."""
+    with state.lock:
+        future = state.stop_future
+        worker = state.stop_worker
+    if future is not None:
+        future.result(timeout=timeout)
+    if worker is not None:
+        worker.join(timeout=timeout)
+        if worker.is_alive():
+            raise TimeoutError("Toplantı kapanış işçisi hâlâ çalışıyor.")
+    return _lifecycle_snapshot(state)
+
+
+def _safe_lifecycle_log(state, level, message, failure=None):
+    """Günlük arızasını süreç durumunda tutar; kapanış sonucunun yerine geçirmez."""
+    try:
+        details = (type(failure), failure, failure.__traceback__) if failure is not None else None
+        log.log(level, message, exc_info=details)
+    except BaseException as logging_error:
+        with state.lock:
+            state.logging_errors.append(logging_error)
+
+
+def _stop_worker(state, future):
+    """Her sonuçta Future'ı bir kez tamamlar; raporlama ancak bundan sonra yapılır."""
+    failure = None
+    cleanup_failure = None
+    result = None
+    try:
+        result = state.assistant.stop()
+    except BaseException as exc:
+        failure = exc
+        state.assistant.last_stop_finalized = False
+        state.assistant.status = "Final özet oluşturulamadı"
+    finally:
+        try:
+            state.assistant.repository.close_thread_connection()
+        except BaseException as exc:
+            cleanup_failure = exc
+            if failure is None:
+                failure = exc
+        if failure is None and not (state.assistant.last_stop_drained is True
+                                    and state.assistant.last_stop_finalized is True):
+            failure = RuntimeError("Toplantı finalizasyonu doğrulanamadı.")
+        with state.lock:
+            state.stop_failure = failure
+            state.stop_cleanup_failure = cleanup_failure
+        if failure is None:
+            future.set_result(result)
+        else:
+            future.set_exception(failure)
+    if failure is not None:
+        _safe_lifecycle_log(state, logging.ERROR, "Toplantı kapanış işçisi başarısız oldu", failure)
+    if cleanup_failure is not None and cleanup_failure is not failure:
+        _safe_lifecycle_log(state, logging.ERROR, "Kapanış işçisinin bağlantısı kapatılamadı", cleanup_failure)
+    _safe_lifecycle_log(state, logging.INFO, "Toplantı kapanış işçisi sonuçlandı.")
+
+
+def _request_stop(state):
+    """Eşzamanlı sayfa ve sunucu kapanışları aynı sonucu paylaşır."""
+    with state.lock:
+        if state.stop_future is not None and (not state.stop_future.done()
+                                             or state.stop_session_id == state.assistant.session_id):
+            return state.stop_future
+        if not state.assistant._running:
+            future = Future()
+            future.set_result(state.assistant.live_summary)
+            return future
+        future = Future()
+        future.set_running_or_notify_cancel()
+        worker = threading.Thread(
+            target=_stop_worker, args=(state, future), name="vesper-ui-stop", daemon=False,
+        )
+        state.stop_future = future
+        state.stop_worker = worker
+        state.stop_session_id = state.assistant.session_id
+        state.stop_failure = None
+        state.stop_cleanup_failure = None
+        try:
+            worker.start()
+        except BaseException as exc:
+            state.stop_worker = None
+            state.stop_failure = exc
+            future.set_exception(exc)
+            raise
+        return future
+
+
+def _shutdown_assistant(state):
+    """Sunucuyu uzun özete bağlamadan kapanışı ister; tamamlandı iddiası kurmaz."""
+    with state.lock:
+        if state.closing:
+            return
+        state.closing = True
+    _request_stop(state)
+    snapshot = _lifecycle_snapshot(state)
+    if snapshot["stop_pending"] or snapshot["stop_worker_alive"]:
+        _safe_lifecycle_log(state, logging.WARNING,
+            "Sunucu kapanıyor; toplantı finalizasyonu henüz doğrulanmadı. "
+            "Süreç zorla sonlandırılırsa sonuç belirsiz kalabilir; "
+            "kapanış işçisi bitmeden verileri temizlemeyin.",
+        )
+    try:
+        state.assistant.repository.close_thread_connection()
+    except Exception as exc:
+        _safe_lifecycle_log(state, logging.ERROR, "Sunucu iş parçacığının bağlantısı kapatılamadı", exc)
+
+
+def _get_assistant_lifecycle():
+    """NiceGUI betiği yeniden yürütülse de süreçte tek motor oluşturur."""
+    registry_lock = app.__dict__.setdefault("_vesper_assistant_registry_lock", threading.RLock())
+    with registry_lock:
+        state = getattr(app.state, "_vesper_assistant_lifecycle", None)
+        identity = _configuration_identity()
+        if state is not None and state.pid == os.getpid():
+            if state.configuration != identity:
+                raise RuntimeError("Motor oluşturulduktan sonra veri yolları değiştirilemez.")
+            return state
+        state = SimpleNamespace(
+            pid=os.getpid(), configuration=identity, lock=threading.RLock(),
+            assistant=WebinarAssistant(), closing=False, stop_future=None, stop_worker=None,
+            stop_session_id=None, stop_failure=None, stop_cleanup_failure=None, logging_errors=[],
+        )
+        state.snapshot = lambda: _lifecycle_snapshot(state)
+        state.wait_for_stop = lambda timeout=None: _wait_for_stop(state, timeout)
+        app.on_shutdown(lambda: _shutdown_assistant(state))
+        app.state._vesper_assistant_lifecycle = state
+        return state
+
+
+_assistant_lifecycle = _get_assistant_lifecycle()
+assistant = _assistant_lifecycle.assistant
+
+
+def _lifecycle_is_closing():
+    """Tüm sayfalar için ortak kapanış engelini okur."""
+    with _assistant_lifecycle.lock:
+        return (_assistant_lifecycle.closing
+                or (_assistant_lifecycle.stop_future is not None
+                    and not _assistant_lifecycle.stop_future.done()))
 
 # NiceGUI eleman referansları — arka plan mantığı bunlarla konuşur
 transcript_area = None
@@ -30,6 +204,11 @@ stop_button = None
 device_select = None
 language_select = None
 llm_profile_select = None
+live_materials_editor = None
+live_materials_list = None
+history_materials_list = None
+_materials_state = {"owner": None, "accepting": False, "signature": None,
+                    "history_signature": None, "stopping": False}
 
 # main.py'deki self.status metinlerinin TAM KARŞILIĞI (nokta rengi, canlı mı)
 STATUS_STYLES = {
@@ -129,7 +308,10 @@ def on_llm_profile_change(e):
 
 def on_start():
     try:
-        assistant.start()
+        with _assistant_lifecycle.lock:
+            if _lifecycle_is_closing():
+                raise RuntimeError("Toplantı kapanırken yeni oturum başlatılamaz.")
+            assistant.start()
     except Exception as e:
         ui.notify(str(e), type="negative")
         return
@@ -159,18 +341,60 @@ def on_start():
     # durumunu görebilir.
     status_badge.set_text(assistant.status)
     _apply_status_visuals(assistant.status)
+    _materials_state["stopping"] = False
+    refresh_live_materials(force=True)
+
+
+def _stop_view_available():
+    """Kapanan sunucuya veya silinmiş sayfaya geç widget güncellemesi göndermez."""
+    if (_assistant_lifecycle.closing or getattr(app, "is_stopping", False)
+            or getattr(app, "is_stopped", False) or getattr(stop_button, "is_deleted", False)):
+        return False
+    try:
+        client = getattr(stop_button, "client", None)
+        return client is None or not client.is_deleted
+    except RuntimeError:
+        return False
 
 
 async def on_stop():
     stop_button.disable()
+    _materials_state["stopping"] = True
+    refresh_live_materials(force=True)
     ui.notify("Final özet hazırlanıyor, bu 1-2 dakika sürebilir...", type="info")
-    final_summary = await run.io_bound(assistant.stop)
-    if final_summary:
-        summary_area.set_content(final_summary)
+    cancelled = False
+    failure = None
+    final_summary = None
+    wrapped_stop = None
+    try:
+        wrapped_stop = asyncio.wrap_future(_request_stop(_assistant_lifecycle))
+        final_summary = await asyncio.shield(wrapped_stop)
+    except asyncio.CancelledError:
+        cancelled = True
+        if wrapped_stop is not None:
+            # Sayfa ayrıldıktan sonra hata ortak Future'da kalır; yetim bekleyici uyarı üretmez.
+            wrapped_stop.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        raise
+    except Exception as exc:
+        failure = exc
+        _safe_lifecycle_log(_assistant_lifecycle, logging.ERROR, "Final özet tamamlanamadı", exc)
+    finally:
+        _materials_state["stopping"] = False
+        if not cancelled and _stop_view_available():
+            refresh_live_materials(force=True)
+            refresh_history_materials()
+    if not _stop_view_available():
+        return
     start_button.enable()
     device_select.enable()
     language_select.enable()
     llm_profile_select.enable()
+    if failure is not None:
+        status_badge.set_text(assistant.status)
+        ui.notify("Final özet tamamlanamadı. Hata ayrıntıları günlüklerde veya kapanış durumunda saklandı.", type="negative")
+        return
+    if final_summary:
+        summary_area.set_content(final_summary)
     if assistant.last_stop_drained and assistant.last_stop_finalized:
         ui.notify("Final özet hazır ve outputs/ klasörüne kaydedildi.", type="positive")
         # Az önce biten oturum Geçmiş'te hemen görünsün.
@@ -218,6 +442,140 @@ def refresh():
     if assistant.live_summary and assistant.live_summary != _last["summary"]:
         summary_area.set_content(assistant.live_summary)
         _last["summary"] = assistant.live_summary
+    refresh_live_materials()
+    refresh_history_materials()
+
+
+def _materials_signature(session_id, artifacts):
+    return (session_id, tuple((a.id, a.kind, a.content, a.created_at) for a in artifacts))
+
+
+def _render_materials(container, session_id, artifacts):
+    """Kullanıcı metni yalnızca düz etiketlere gider; HTML/Markdown olarak yorumlanmaz."""
+    container.clear()
+    with container:
+        if not artifacts:
+            ui.label("Henüz materyal eklenmedi.").classes("text-sm text-slate-500")
+        for artifact in artifacts:
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("flex-1 min-w-0 gap-1"):
+                    ui.label({ARTIFACT_LINK: "Link", ARTIFACT_NOTE: "Note"}.get(artifact.kind, artifact.kind)).classes(
+                        "vesper-mono text-xs text-cyan-400"
+                    )
+                    ui.label(artifact.content).classes("whitespace-pre-wrap break-words text-sm text-slate-300")
+                    ui.label(_format_local_datetime(artifact.created_at)).classes("vesper-mono text-xs text-slate-500")
+                ui.button(icon="delete", on_click=lambda sid=session_id, aid=artifact.id: open_material_delete_dialog(sid, aid)).props(
+                    "flat round dense"
+                ).classes("vesper-icon-btn vesper-icon-btn-danger")
+
+
+def _material_load_error(container):
+    container.clear()
+    with container:
+        ui.label("Materyaller yüklenemedi; yeniden denenecek.").classes("text-sm text-amber-400")
+
+
+def _build_material_editor(session_id, accepting):
+    live_materials_editor.clear()
+    with live_materials_editor:
+        if not accepting:
+            ui.label("Materyal eklemek için etkin bir oturum başlat.").classes("text-xs text-slate-500")
+            return
+        kind_input = ui.select({ARTIFACT_LINK: "Link", ARTIFACT_NOTE: "Note"}, value=ARTIFACT_NOTE).props(
+            "dark outlined dense"
+        ).classes("w-32")
+        content_input = ui.textarea("İçerik").props("dark outlined dense autogrow").classes("w-full")
+
+        def add_material():
+            # Eski formun olayı eski kimliğe bağlıdır; yeni formun içeriğini veya oturumunu kullanmaz.
+            if (_lifecycle_is_closing() or _materials_state["stopping"] or not assistant._running
+                    or session_id != assistant.session_id or session_id != _materials_state["owner"]):
+                ui.notify("Bu form artık etkin oturuma ait değil. Güncel formu kullan.", type="negative")
+                refresh_live_materials()
+                return
+            try:
+                assistant.add_artifact(session_id, kind_input.value, content_input.value)
+            except (ValueError, RuntimeError) as exc:
+                ui.notify(str(exc), type="negative")
+                refresh_live_materials()
+                return
+            except Exception:
+                log.exception("Materyal kaydedilemedi")
+                ui.notify("Materyal kaydedilemedi. Lütfen yeniden dene.", type="negative")
+                return
+            content_input.set_value("")
+            refresh_live_materials()
+            refresh_history_materials()
+            ui.notify("Materyal eklendi.", type="positive")
+
+        ui.button("Ekle", on_click=add_material).props("unelevated no-caps").classes("vesper-btn vesper-btn-primary")
+
+
+def refresh_live_materials(force=False):
+    """Oturum/durum değişince formu yeniler; olağan liste yenilemesi taslağı silmez."""
+    if live_materials_list is None:
+        return
+    session_id = assistant.session_id
+    try:
+        session = assistant.repository.get_session(session_id) if session_id else None
+        accepting = bool(session and assistant._running and not _lifecycle_is_closing()
+                         and not _materials_state["stopping"]
+                         and session.status == STATUS_ACTIVE and session.ended_at is None)
+        artifacts = assistant.list_artifacts(session_id) if session else []
+    except Exception:
+        log.exception("Canlı materyaller yüklenemedi")
+        _build_material_editor(session_id, False)
+        _materials_state.update(owner=None, accepting=False, signature=None)
+        _material_load_error(live_materials_list)
+        return
+    if force or (session_id, accepting) != (_materials_state["owner"], _materials_state["accepting"]):
+        _materials_state.update(owner=session_id, accepting=accepting)
+        _build_material_editor(session_id, accepting)
+    signature = _materials_signature(session_id, artifacts)
+    if force or signature != _materials_state["signature"]:
+        _render_materials(live_materials_list, session_id, artifacts)
+        _materials_state["signature"] = signature
+
+
+def refresh_history_materials(force=False):
+    if history_materials_list is None:
+        return
+    session_id = _history_state["selected_id"]
+    try:
+        artifacts = assistant.list_artifacts(session_id) if session_id else []
+    except Exception:
+        log.exception("Geçmiş materyalleri yüklenemedi")
+        _materials_state["history_signature"] = None
+        _material_load_error(history_materials_list)
+        return
+    signature = _materials_signature(session_id, artifacts)
+    if force or signature != _materials_state["history_signature"]:
+        _render_materials(history_materials_list, session_id, artifacts)
+        _materials_state["history_signature"] = signature
+
+
+def open_material_delete_dialog(session_id, artifact_id):
+    """Onay, açıldığı andaki oturum ve materyal kimliklerini korur."""
+    with ui.dialog() as dialog, ui.card().classes("vesper-glass p-5 gap-3"):
+        ui.label("Bu materyal silinsin mi?").classes("vesper-display text-base text-slate-100")
+        ui.label("Bu işlem geri alınamaz.").classes("text-xs text-slate-400")
+
+        def do_delete():
+            try:
+                deleted = assistant.delete_artifact(session_id, artifact_id)
+            except Exception:
+                log.exception("Materyal silinemedi")
+                ui.notify("Materyal silinemedi. Lütfen yeniden dene.", type="negative")
+                return
+            dialog.close()
+            refresh_live_materials()
+            refresh_history_materials()
+            ui.notify("Materyal silindi." if deleted else "Materyal artık mevcut değil.", type="info")
+
+        with ui.row().classes("justify-end gap-2 w-full"):
+            ui.button("İptal", on_click=dialog.close).props("flat").classes("text-slate-400")
+            ui.button("Sil", on_click=do_delete).classes("vesper-btn vesper-btn-stop")
+    dialog.open()
 
 
 # ---------------------------------------------------------------------------
@@ -289,12 +647,14 @@ def open_session_detail(session_id: str):
     )
     history_detail_empty.set_visibility(False)
     history_detail_content.set_visibility(True)
+    refresh_history_materials(force=True)
 
 
 def clear_history_detail():
     _history_state["selected_id"] = None
     history_detail_content.set_visibility(False)
     history_detail_empty.set_visibility(True)
+    refresh_history_materials(force=True)
 
 
 def open_rename_dialog(session_id: str, current_title: str):
@@ -370,6 +730,7 @@ def refresh_history_list():
     sessions = assistant.repository.list_sessions()
 
     if not sessions:
+        clear_history_detail()
         with history_list_container:
             ui.label("Henüz kaydedilmiş oturum yok.").classes(
                 "text-sm text-slate-500 text-center py-6"
@@ -724,6 +1085,11 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
                     "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-400 text-sm leading-relaxed"
                 ).style("max-height: 55vh;")
 
+        with ui.column().classes("vesper-glass w-full p-5 gap-3"):
+            ui.label("Meeting Materials").classes("vesper-display text-base font-medium text-slate-100")
+            live_materials_editor = ui.column().classes("w-full gap-2")
+            live_materials_list = ui.column().classes("vesper-scroll w-full gap-3 overflow-y-auto").style("max-height: 28vh;")
+
     # ======================================================================
     # GEÇMİŞ sekmesi — kalıcı oturum listesi + detay (v0.2.0, yeni)
     # ======================================================================
@@ -760,6 +1126,10 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
                         "vesper-scroll vesper-md flex-1 overflow-y-auto text-slate-400 text-sm leading-relaxed"
                     ).style("max-height: 45vh;")
 
+            with ui.column().classes("vesper-glass w-full p-5 gap-3"):
+                ui.label("Meeting Materials").classes("vesper-display text-sm font-medium text-slate-300")
+                history_materials_list = ui.column().classes("vesper-scroll w-full gap-3 overflow-y-auto").style("max-height: 28vh;")
+
     # ---- Alt bilgi ----
     ui.label("Transkripsiyon ve özetleme yerel olarak çalışır — bulut AI API'si kullanılmaz.").classes(
         "text-center text-xs text-slate-600 mt-2"
@@ -768,6 +1138,7 @@ with ui.column().classes("relative z-10 w-full max-w-6xl mx-auto p-6 gap-6 min-h
 # Sayfa ilk yüklendiğinde durum görselini "Beklemede" durumuna göre ayarla
 # (ilk refresh() çağrısı 5 saniye sonra gelecek, o ana kadar boş kalmasın)
 _apply_status_visuals(assistant.status)
+refresh_live_materials(force=True)
 
 # ---------------------------------------------------------------------------
 # Sürüklenebilir ayırıcı için vanilla JS (DOM hazır olduktan sonra çalışır)

@@ -14,6 +14,7 @@ deterministik şekilde kontrol edilir.
 """
 
 import ast
+import importlib
 import os
 import sys
 import tempfile
@@ -225,6 +226,27 @@ class ScriptedLiveSummarizer(FakeSummarizer):
             self.release_event.wait(timeout=30)
             raise RuntimeError("simulated live Ollama failure (after unblocking)")
         return f"[LIVE#{call_no}] {transcript}"
+
+
+def _import_engine_with_fake_hardware():
+    """Motor importunu da sahtelerle yalıtır; CUDA tanıları ve donanım importları çalışmaz."""
+    modules = {}
+    for name, attribute, replacement in (
+        ("vesper.audio_capture", "AudioCapture", FakeAudioCapture),
+        ("vesper.transcriber", "Transcriber", FakeTranscriber),
+        ("vesper.summarizer", "Summarizer", FakeSummarizer),
+    ):
+        module = types.ModuleType(name)
+        setattr(module, attribute, replacement)
+        modules[name] = module
+    with patch.dict(sys.modules, modules):
+        engine_module = importlib.import_module("vesper.engine")
+    # patch.dict içerde yüklenen modülleri de kaldırır; yalnızca sahte bağımlılıklı motoru tut.
+    sys.modules["vesper.engine"] = engine_module
+    return engine_module
+
+
+_engine_module = _import_engine_with_fake_hardware()
 
 
 class _PausableLock:

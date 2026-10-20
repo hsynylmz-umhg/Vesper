@@ -31,7 +31,7 @@ from .audio_capture import AudioCapture
 from .transcriber import Transcriber
 from .summarizer import Summarizer
 from .repository import SessionRepository
-from .session import STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
+from .session import Artifact, CAPTURE_MANUAL, STATUS_COMPLETED, STATUS_INTERRUPTED, SUMMARY_FINAL, SUMMARY_LIVE
 from .storage import Database
 from .language import resolve_source_languages, whisper_language_for
 
@@ -74,6 +74,9 @@ class WebinarAssistant:
         self._summarize_thread = None
         self._segment_seq = 0
         self.session_id = None
+        # Yalnızca ek bilgi kabul sınırı; ses, model çağrısı veya join boyunca tutulmaz.
+        self._artifact_session_lock = threading.Lock()
+        self._artifact_session_id: Optional[str] = None
 
         # Phase A (güvenli kapanış):
         #   last_stop_drained   -> tüm kabul edilmiş ses (kuyrukta + işlenmekte
@@ -187,6 +190,33 @@ class WebinarAssistant:
         self._source_language_key = key
 
     # ------------------------------------------------------------------ #
+    def add_artifact(
+        self,
+        session_id: str,
+        kind: str,
+        content: str,
+        capture_method: str = CAPTURE_MANUAL,
+        source_segment_id: Optional[int] = None,
+    ) -> int:
+        """Açıkça belirtilen etkin oturuma yazar; bayat istek başka oturuma yönlendirilmez."""
+        with self._artifact_session_lock:
+            if (not isinstance(session_id, str) or not session_id.strip() or not self._running
+                    or session_id != self._artifact_session_id or session_id != self.session_id):
+                raise RuntimeError("Ek bilgi isteği etkin oturuma ait değil.")
+            # Veritabanı durumu INSERT içinde atomik denetlenir; dışarıdan bitirme yarışı da reddedilir.
+            return self.repository.add_artifact(
+                session_id, kind, content, capture_method, source_segment_id, require_active=True,
+            )
+
+    def list_artifacts(self, session_id: str) -> List[Artifact]:
+        """Geçmiş dahil, açıkça belirtilen oturumun ek bilgilerini döndürür."""
+        return self.repository.list_artifacts(session_id)
+
+    def delete_artifact(self, session_id: str, artifact_id: int) -> bool:
+        """Silme işlemini açık oturum ve ek bilgi kimliğiyle sınırlar."""
+        return self.repository.delete_artifact(session_id, artifact_id)
+
+    # ------------------------------------------------------------------ #
     def start(self):
         if self._running:
             return
@@ -198,6 +228,10 @@ class WebinarAssistant:
                 "Önceki oturumun transkripsiyon işçisi hâlâ çalışıyor "
                 "(muhtemelen bir zaman aşımı sonrası). Yeni oturum başlatılamaz."
             )
+
+        # Önceki oturum kimliği başlangıç sürerken yeni ek bilgi kabul edemez.
+        with self._artifact_session_lock:
+            self._artifact_session_id = None
 
         # v0.4.0: oturum-yerel konuşma dili ANLIK GÖRÜNTÜSÜ. Bu TEK değer, bu oturumun
         # her transcribe() çağrısı, sessions.source_language ve segments.language
@@ -253,17 +287,22 @@ class WebinarAssistant:
         # zararsız şekilde temizlenirdi).
         default_title = f"Webinar — {datetime.now():%Y-%m-%d %H:%M}"
         try:
-            self.session_id = self.repository.create_session(
+            new_session_id = self.repository.create_session(
                 title=default_title,
                 source_type="system_audio",
                 source_name=self.capture.get_active_device_name(),
                 source_language=session_language,
                 summary_language="tr",
             )
+            with self._artifact_session_lock:
+                self.session_id = new_session_id
+                self._artifact_session_id = new_session_id if self._running else None
         except Exception:
             # SQLite'a yazılamasa bile oturum bellekte devam edebilmeli;
             # ama bunu sessizce yutma, yüksek sesle logla.
-            self.session_id = None
+            with self._artifact_session_lock:
+                self.session_id = None
+                self._artifact_session_id = None
             log.exception("Yeni oturum SQLite'a kaydedilemedi — bu oturum kalıcı OLMAYACAK")
 
         self._transcribe_thread = threading.Thread(
@@ -289,9 +328,11 @@ class WebinarAssistant:
         çalışır — ama oturum STATUS_COMPLETED değil STATUS_INTERRUPTED
         işaretlenir (last_stop_finalized=False). Yakalanan hiçbir veri
         kaybolmaz; sadece oturumun TEMİZ tamamlandığı iddiası kaldırılır."""
-        if not self._running:
-            return self.live_summary
-        self._running = False
+        with self._artifact_session_lock:
+            self._artifact_session_id = None
+            if not self._running:
+                return self.live_summary
+            self._running = False
 
         # 1) Ses üreticisinin KESİN olarak öldüğünü kanıtla. Bu kanıtlanmadan
         # sentinel'i kuyruğa KOYMA — aksi halde AudioCapture'ın finally
